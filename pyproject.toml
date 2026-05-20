@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chipoid"
+version = "0.1.0"
+description = "Classical-CV well detection and fluorescence readout for microfluidic chip overview images"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "scikit-image>=0.21",
+    "tifffile>=2023.0",
+    "imagecodecs>=2023.0",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "black>=23.0",
+]
+
+[project.scripts]
+chipoid = "chipoid.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["chipoid*"]

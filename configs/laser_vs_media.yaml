@@ -1,0 +1,35 @@
+# chipOid run config: two MCF7 chips, raw 3-page TIFFs.
+#   mcf7_laser  — 15 µM NCs + laser
+#   mcf7_media  — media control
+#
+# Both sources are multi-page raw TIFFs (BF=page 0, green=page 1, red=page 2)
+# so extraction is enabled. The pipeline writes split files to
+# data/extracted/<image_id>{,_green,_red}.tif before detection runs.
+
+input:
+  manifest: manifest_laser_media.csv
+  data_root: data
+  extract_channels:
+    enabled: true
+    pages:
+      brightfield: 0
+      green: 1
+      red: 2
+    out_subdir: extracted
+
+markers:
+  - green
+  - red
+
+# Detection / lattice / readout: use defaults (well diameter ~84 px, axis-aligned
+# lattice). If detection numbers come out wrong on the laser chip, tune here.
+detection:
+  radius_min: 35
+  radius_max: 50
+
+output:
+  dir: output/laser_media
+  per_image_subdir: true
+  save_review_figure: true
+  save_stage_overlays: true
+  save_diagnostics: true

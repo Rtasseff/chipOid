@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Editors / IDEs
+.idea/
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS / misc
+.DS_Store
+Thumbs.db
+
+# Project-local, machine-specific
+LOCAL_SETUP.md
+
+# Data and outputs live on D drive via symlinks; never commit them
+# (patterns match both the symlink itself and any real-dir variant)
+/data
+/output
+/runs
+/inference
+data/
+output/
+runs/
+inference/
+
+# Logs and scratch
+*.log
+scratch/
+

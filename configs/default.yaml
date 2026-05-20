@@ -1,0 +1,105 @@
+# chipOid pipeline configuration.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Input
+# ──────────────────────────────────────────────────────────────────────────
+input:
+  manifest: manifest.csv          # CSV listing one image per row
+  data_root: data                 # all `source` paths in manifest resolve under here
+
+  # Optional preprocessing: split a multi-page raw TIFF into one brightfield +
+  # one TIFF per marker. See README "Two ways to feed data into chipOid".
+  #
+  # When enabled, the brightfield page is ALWAYS converted to 8-bit via
+  # per-image percentile clip-and-stretch [1%, 99%]. This is required so the
+  # downstream Canny defaults work without per-image threshold tuning.
+  # Companion (fluorescence) pages are written through at native dtype.
+  extract_channels:
+    enabled: false
+    pages:                        # 0-based page index per channel
+      brightfield: 0
+      green: 1
+      red: 2
+    out_subdir: extracted         # files land in <data_root>/<out_subdir>/
+
+# ──────────────────────────────────────────────────────────────────────────
+# Markers (fluorescence channels)
+# ──────────────────────────────────────────────────────────────────────────
+# Ordered list of marker names. Must match the companion-file suffixes
+# (<base>_<marker>.tif) AND the keys under extract_channels.pages when
+# extraction is enabled.
+markers:
+  - green
+  - red
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 1 — Hough circle detection
+# ──────────────────────────────────────────────────────────────────────────
+# IMPORTANT: the Canny defaults below assume an 8-bit brightfield. If you
+# supply a higher-bit-depth BF (uint16 etc.) and skip extraction, you MUST
+# set canny_low_threshold / canny_high_threshold explicitly — otherwise
+# skimage's auto thresholds (10% and 20% of dtype max) sit far outside the
+# actual data range and no edges are found.
+detection:
+  radius_min: 35                  # px
+  radius_max: 50                  # px
+  radius_step: 1
+  canny_sigma: 2.0
+  canny_low_threshold:            # null -> skimage auto (10% of dtype max)
+  canny_high_threshold:           # null -> skimage auto (20% of dtype max)
+  peak_threshold: 0.30            # fraction of global max votes required
+  min_spacing: 110                # min px distance between accepted peaks
+  max_peaks: 2000
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 2 — Axis-aligned lattice fit
+# ──────────────────────────────────────────────────────────────────────────
+# Why a lattice at all: it gives us a geometric backup to Hough. If Hough
+# misses a well, we can fill it in from the lattice geometry. The lattice
+# is fit to the Hough detections themselves, so it's "what the data says
+# the grid should be" rather than a hard-coded assumption.
+#
+# Limitation that follows from this: ONE lattice per image. If a single
+# image contains two physically separate chips with different lattice
+# origins, the fit averages them and snapping mislabels wells. Split such
+# images into one-chip-per-image upstream.
+lattice:
+  enabled: true                   # if false, Hough detections are used directly
+  k_nn: 4                         # nearest-neighbor count for pitch estimation
+  axis_band: 50.0                 # off-axis tolerance (px) when binning NN vectors
+  snap_tolerance: 30.0            # max px between grid point and detection for "detected"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 3 — Per-well fluorescence readout
+# ──────────────────────────────────────────────────────────────────────────
+readout:
+  margin: 4.0                     # shrink signal disk inward (px)
+  annulus_inner: 8.0              # bg-annulus inner offset from r_well (px)
+  annulus_outer: 20.0             # bg-annulus outer offset from r_well (px)
+
+  # Which per-well, per-marker columns to write in wells.csv.
+  # See METRICS.md for definitions. Allowed values:
+  #   mean, median, std, bg_median, signal, signal_median,
+  #   n_signal_px, n_bg_px, partial_disk
+  metrics:
+    - mean
+    - median
+    - std
+    - bg_median
+    - signal
+    - signal_median
+    - n_signal_px
+    - n_bg_px
+    - partial_disk
+
+# ──────────────────────────────────────────────────────────────────────────
+# Output
+# ──────────────────────────────────────────────────────────────────────────
+output:
+  dir: output
+  per_image_subdir: true          # output/<image_id>/...  vs flat output/...
+  save_review_figure: true        # composite per-image review PNG
+  save_stage_overlays: true       # individual stage PNGs
+  save_diagnostics: true          # histograms + scatter
+  consolidated_csv: wells_all.csv
+  batch_summary_csv: batch_summary.csv

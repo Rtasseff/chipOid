@@ -1,0 +1,3 @@
+image_id,source,group,condition,notes
+mcf7_laser,raw/Mcf7_spheroids_15uMNCs_laser_tile_stitched1_24072_lmp.czi-Mcf7_spheroids_15uMNCs_laser_tile_stitched1_24072.tif,mcf7,laser_15uMNCs,
+mcf7_media,raw/Mcf7_spheroids_media_tile_stitched1_24072.tif,mcf7,media_control,
