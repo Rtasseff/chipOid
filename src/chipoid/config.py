@@ -24,7 +24,10 @@ DEFAULTS: dict[str, Any] = {
         # companion per marker before processing.
         #   false: manifest `source` is the brightfield directly; companions
         #          are found by convention <stem>_<marker>.tif
-        #   true:  manifest `source` is the multi-page raw; pages are split.
+        #   true:  manifest `source` is the multi-page raw; pages are split
+        #          into output/<image_id>/<image_id>{,_<marker>}.tif
+        #          (and optionally deleted after processing — see
+        #          output.keep_extracted below).
         "extract_channels": {
             "enabled": False,
             # Page index per channel inside the raw multi-page TIFF. Must
@@ -34,8 +37,6 @@ DEFAULTS: dict[str, Any] = {
                 # green: 1
                 # red:   2
             },
-            # Subdirectory under data_root where extracted files land.
-            "out_subdir": "extracted",
         },
     },
 
@@ -71,6 +72,22 @@ DEFAULTS: dict[str, Any] = {
         # Max distance (px) a predicted grid point can be from a real detection
         # to count as "detected". Beyond this, the point is marked "filled".
         "snap_tolerance": 30.0,
+        # Lattice rotation handling:
+        #   "auto"  -> estimate rotation from data (robust circular median of
+        #              NN-vector angles)
+        #   numeric -> use this rotation in DEGREES (positive = CCW in image
+        #              coords). Use 0 to force pure axis-aligned.
+        "rotation_deg": "auto",
+        # Density-filter threshold for trimming spurious rows/cols. After
+        # snapping, any row (or col) where the fraction of Hough-detected
+        # wells is below this is dropped entirely. Set to 0 to disable.
+        # Default 0.25 = a row needs at least 1 detection out of 4 cols to survive.
+        "min_detected_fraction": 0.25,
+        # Optional hard caps on lattice dimensions. If set, the highest-index
+        # rows/cols are trimmed until at most this many remain. Use only when
+        # you know the chip's true layout and want a manual backstop.
+        "max_rows": None,
+        "max_cols": None,
     },
 
     "readout": {
@@ -109,6 +126,11 @@ DEFAULTS: dict[str, Any] = {
         "consolidated_csv": "wells_all.csv",
         # One-row-per-image summary CSV at the batch root.
         "batch_summary_csv": "batch_summary.csv",
+        # When extract_channels.enabled is true, the split BF + companion TIFFs
+        # land in output/<image_id>/ alongside the overlays. Set this to false
+        # to delete them after the per-image readout completes (saves disk if
+        # you re-extract often and don't need the split files long-term).
+        "keep_extracted": True,
     },
 }
 

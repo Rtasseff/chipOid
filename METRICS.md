@@ -51,6 +51,17 @@ run, not per-well).
 | `n_bg_px_<m>`      | int     | Pixel count in the bg annulus. Constant unless clipped at image edge. |
 | `partial_disk_<m>` | bool    | `True` if the signal disk lost pixels to image-edge clipping. Filter these out for clean comparisons. |
 
+## Raw Hough detections (`hough_centers.csv`)
+
+Per-image diagnostic file listing every Hough detection BEFORE the lattice step
+filters / supplements them. Use for debugging detection issues. Columns:
+
+| Column  | Description |
+|---|---|
+| `x`, `y` | Pixel coordinates of detected circle center |
+| `r`      | Detected radius (px) |
+| `score`  | Normalized Hough vote at this peak, in `[0, 1]`. Comes from `skimage.transform.hough_circle_peaks` with `normalize=True`: each pixel's vote is divided by the candidate circle's perimeter, so larger circles aren't unfairly preferred. The detection-step config `detection.peak_threshold` (default 0.30) is the minimum score required for a peak to be returned — meaning "at least 30% of the global max vote count." Higher `score` = stronger geometric evidence for a circle at that position. |
+
 ## Batch summary (`batch_summary.csv`)
 
 One row per image, with image-level counts and intensity quantiles:

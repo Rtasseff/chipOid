@@ -2,8 +2,14 @@
 
 Usage:
     chipoid run --config configs/default.yaml
-    chipoid extract --raw <multipage.tif> --image-id <id> --out-dir <data/extracted/> \
-                    --markers green,red --pages bf=0,green=1,red=2
+
+    # Ad-hoc extraction outside of a batch — the pipeline `run` does this
+    # automatically when extract_channels.enabled=true. The data_root is
+    # treated as read-only by `run`; this standalone subcommand also lets
+    # the caller pick any --out-dir (we recommend somewhere under output/,
+    # not under data/).
+    chipoid extract --raw <multipage.tif> --image-id <id> --out-dir <output/<id>/> \
+                    --markers green,red --pages brightfield=0,green=1,red=2
 """
 from __future__ import annotations
 

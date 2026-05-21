@@ -1,19 +1,47 @@
 """All overlay/figure rendering. Keeping these together makes styling consistent
 across stages and lets the review composite reuse the same primitives.
+
+Style guide:
+  - Lattice / Hough overlays use OPEN circles (border only). The purpose is to
+    show where wells are located, not to obscure them.
+  - Intensity overlays use FILLED, semi-transparent disks colored by the metric.
+    Filled disks make magnitude readable at-a-glance across hundreds of wells.
+  - Where useful, wells are labeled with their `well_id` (e.g. "r05c02") so
+    visual inspection cross-references directly to a row in wells.csv.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 import matplotlib.patches as mpatches
+import matplotlib.patheffects as mpe
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 
+# Filled intensity disks are drawn at this alpha. High enough to see the color
+# clearly, low enough that the BF underneath is still visible for context.
+INTENSITY_ALPHA = 0.55
+
+# Well-label font size for at-pixel overlays. Tuned for our typical ~84 px
+# well diameter at dpi=130.
+LABEL_FONTSIZE = 5
+LABEL_COLOR = "white"
+
+
 def _figsize_for(img_shape, base=8):
     H, W = img_shape
     return (base, max(6, H / W * base))
+
+
+def _label_well(ax, x, y, label):
+    """Small text label centered on a well. White with a thin black halo so it
+    reads against any background color underneath."""
+    txt = ax.text(x, y, label, fontsize=LABEL_FONTSIZE, color=LABEL_COLOR,
+                  ha="center", va="center", weight="bold")
+    # Thin black outline for legibility on light backgrounds.
+    txt.set_path_effects([mpe.withStroke(linewidth=0.8, foreground="black")])
 
 
 # --------------------------------------------------------------------------- #
@@ -30,6 +58,7 @@ def save_hough_overlay(bf: np.ndarray, centers: pd.DataFrame, out_path: Path,
                        radius_range: tuple[int, int]):
     fig, ax = plt.subplots(figsize=_figsize_for(bf.shape))
     ax.imshow(bf, cmap="gray", interpolation="nearest")
+    # Open circles: purpose is to show DETECTED LOCATIONS, not magnitudes.
     for _, row in centers.iterrows():
         ax.add_patch(mpatches.Circle((row.x, row.y), row.r, fill=False, ec="lime", lw=0.6))
         ax.plot(row.x, row.y, "r.", ms=1.5)
@@ -38,14 +67,18 @@ def save_hough_overlay(bf: np.ndarray, centers: pd.DataFrame, out_path: Path,
 
 
 def save_lattice_overlay(bf: np.ndarray, wells: pd.DataFrame, out_path: Path,
-                         info: dict):
+                         info: dict, label_wells: bool = True):
     fig, ax = plt.subplots(figsize=_figsize_for(bf.shape))
     ax.imshow(bf, cmap="gray", interpolation="nearest")
     for _, w in wells.iterrows():
+        # Open circles: this overlay is about geometry/source, not intensity.
+        # Color encodes source (lime=Hough-detected, magenta=lattice-filled).
         ec = "lime" if w.source == "detected" else "magenta"
         ls = "-" if w.source == "detected" else "--"
         a = 0.85 if w.source == "detected" else 0.6
         ax.add_patch(mpatches.Circle((w.x, w.y), w.r, fill=False, ec=ec, lw=0.7, ls=ls, alpha=a))
+        if label_wells and "well_id" in w:
+            _label_well(ax, w.x, w.y, w["well_id"])
     handles = [
         mpatches.Patch(edgecolor="lime", facecolor="none", label="detected"),
         mpatches.Patch(edgecolor="magenta", facecolor="none", label="filled"),
@@ -70,14 +103,25 @@ def _color_scale(values: np.ndarray):
 
 
 def save_intensity_overlay(bf, wells, values, out_path, title, label,
-                           cmap="viridis"):
+                           cmap="viridis", label_wells: bool = True):
+    """BF with FILLED transparent disks colored by per-well metric values.
+
+    Filled (not just outlined) so magnitude is readable across many wells.
+    Alpha keeps the BF visible underneath for context."""
     vmin, vmax = _color_scale(values)
     fig, ax = plt.subplots(figsize=_figsize_for(bf.shape))
     ax.imshow(bf, cmap="gray", interpolation="nearest")
     norm = plt.Normalize(vmin=vmin, vmax=vmax); cm = plt.get_cmap(cmap)
     for (_, w), v in zip(wells.iterrows(), values):
         color = "red" if not np.isfinite(v) else cm(norm(v))
-        ax.add_patch(mpatches.Circle((w.x, w.y), w.r, fill=False, ec=color, lw=1.0))
+        # Filled, semi-transparent disk inside the well; thin matching edge.
+        ax.add_patch(mpatches.Circle(
+            (w.x, w.y), w.r,
+            facecolor=color, edgecolor=color, lw=0.5,
+            alpha=INTENSITY_ALPHA,
+        ))
+        if label_wells and "well_id" in w:
+            _label_well(ax, w.x, w.y, w["well_id"])
     sm = plt.cm.ScalarMappable(norm=norm, cmap=cm); sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax, fraction=0.025, pad=0.02); cbar.set_label(label)
     ax.set_title(title)
@@ -101,7 +145,7 @@ def save_histograms(wells, signal_columns, out_path):
 
 
 def save_scatter(wells, x_col, y_col, x_label, y_label, out_path):
-    """Generic per-well scatter (two markers, no class coloring)."""
+    """Generic per-well scatter (two markers)."""
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.scatter(wells[x_col], wells[y_col], c="steelblue", s=22,
                edgecolor="k", linewidth=0.3)
@@ -119,13 +163,11 @@ def save_review_figure(bf, wells, marker_signals, out_path,
     Layout (left to right):
       [BF + lattice overlay] [BF + marker-A signal] ... [BF + marker-N signal]
       [scatter (if 2+ markers)] [histograms]
-
-    `marker_signals`: dict marker -> 1-D array of signal values aligned with wells.
     """
     marker_names = list(marker_signals.keys())
-    n_overlays = 1 + len(marker_names)  # lattice + each marker
+    n_overlays = 1 + len(marker_names)
     have_scatter = len(marker_names) >= 2
-    n_panels = n_overlays + (1 if have_scatter else 0) + 1  # +1 for histograms
+    n_panels = n_overlays + (1 if have_scatter else 0) + 1
 
     H, W = bf.shape
     panel_w = 3.6
@@ -134,7 +176,7 @@ def save_review_figure(bf, wells, marker_signals, out_path,
     gs = fig.add_gridspec(1, n_panels, wspace=0.05)
     col = 0
 
-    # Lattice
+    # Lattice (open circles; labels omitted at this scale — too small to read)
     ax = fig.add_subplot(gs[0, col]); col += 1
     ax.imshow(bf, cmap="gray", interpolation="nearest")
     for _, w in wells.iterrows():
@@ -146,7 +188,7 @@ def save_review_figure(bf, wells, marker_signals, out_path,
                  fontsize=9)
     ax.set_xticks([]); ax.set_yticks([])
 
-    # Per-marker intensity
+    # Per-marker intensity panels (filled disks for at-a-glance magnitude)
     for marker, vals in marker_signals.items():
         ax = fig.add_subplot(gs[0, col]); col += 1
         ax.imshow(bf, cmap="gray", interpolation="nearest")
@@ -154,19 +196,21 @@ def save_review_figure(bf, wells, marker_signals, out_path,
         norm = plt.Normalize(vmin=vmin, vmax=vmax); cm = plt.get_cmap("viridis")
         for (_, w), v in zip(wells.iterrows(), vals):
             color = "red" if not np.isfinite(v) else cm(norm(v))
-            ax.add_patch(mpatches.Circle((w.x, w.y), w.r, fill=False, ec=color, lw=1.0))
+            ax.add_patch(mpatches.Circle(
+                (w.x, w.y), w.r,
+                facecolor=color, edgecolor=color, lw=0.4,
+                alpha=INTENSITY_ALPHA,
+            ))
         ax.set_title(f"{marker} signal\n[{vmin:.0f}, {vmax:.0f}]", fontsize=9)
         ax.set_xticks([]); ax.set_yticks([])
 
-    # Scatter (only if 2+ markers)
     if have_scatter:
         ax = fig.add_subplot(gs[0, col]); col += 1
         m1, m2 = marker_names[:2]
-        v1 = marker_signals[m1]; v2 = marker_signals[m2]
-        ax.scatter(v1, v2, c="steelblue", s=20, edgecolor="k", linewidth=0.3)
+        ax.scatter(marker_signals[m1], marker_signals[m2],
+                   c="steelblue", s=20, edgecolor="k", linewidth=0.3)
         ax.set_xlabel(m1); ax.set_ylabel(m2); ax.set_title("per-well fluorescence", fontsize=9)
 
-    # Histograms
     ax = fig.add_subplot(gs[0, col])
     for marker, vals in marker_signals.items():
         finite = vals[np.isfinite(vals)]

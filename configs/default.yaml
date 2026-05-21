@@ -14,13 +14,14 @@ input:
   # per-image percentile clip-and-stretch [1%, 99%]. This is required so the
   # downstream Canny defaults work without per-image threshold tuning.
   # Companion (fluorescence) pages are written through at native dtype.
+  # Extracted files land in output/<image_id>/<image_id>{,_<marker>}.tif —
+  # see output.keep_extracted to control whether they're kept after readout.
   extract_channels:
     enabled: false
     pages:                        # 0-based page index per channel
       brightfield: 0
       green: 1
       red: 2
-    out_subdir: extracted         # files land in <data_root>/<out_subdir>/
 
 # ──────────────────────────────────────────────────────────────────────────
 # Markers (fluorescence channels)
@@ -69,6 +70,24 @@ lattice:
   axis_band: 50.0                 # off-axis tolerance (px) when binning NN vectors
   snap_tolerance: 30.0            # max px between grid point and detection for "detected"
 
+  # Lattice rotation relative to image axes:
+  #   "auto"  -> estimate from data (robust circular median of NN-vector angles)
+  #   numeric -> use this rotation in DEGREES (positive = CCW). Use 0 to force
+  #              pure axis-aligned behavior.
+  rotation_deg: auto
+
+  # Trim rows/cols that look like they extend beyond the actual chip. After
+  # snapping, any row/col where (#detected / #total) is below this fraction is
+  # dropped. Set to 0 to disable. Default 0.25 = row needs at least 1 detection
+  # out of 4 cols to survive.
+  min_detected_fraction: 0.25
+
+  # Optional hard caps on lattice dimensions, applied AFTER the density filter.
+  # Use only when you know the chip's true layout. Highest-index rows/cols are
+  # trimmed first. null = no cap.
+  max_rows:
+  max_cols:
+
 # ──────────────────────────────────────────────────────────────────────────
 # Stage 3 — Per-well fluorescence readout
 # ──────────────────────────────────────────────────────────────────────────
@@ -103,3 +122,8 @@ output:
   save_diagnostics: true          # histograms + scatter
   consolidated_csv: wells_all.csv
   batch_summary_csv: batch_summary.csv
+
+  # When extract_channels.enabled=true, the split BF + companion TIFFs land in
+  # output/<image_id>/ alongside the overlays. Set to false to delete them
+  # after readout completes.
+  keep_extracted: true

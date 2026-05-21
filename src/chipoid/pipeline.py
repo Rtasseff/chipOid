@@ -27,11 +27,15 @@ class ImageResult:
     summary: dict[str, Any]  # one-row metadata for batch summary
 
 
-def _resolve_input_paths(row: pd.Series, cfg: dict, data_root: Path
-                         ) -> tuple[Path, dict[str, Path]]:
-    """Return (brightfield_path, {marker: companion_path}) for one manifest row.
+def _resolve_input_paths(row: pd.Series, cfg: dict, data_root: Path,
+                         per_image_out_dir: Path
+                         ) -> tuple[Path, dict[str, Path], bool]:
+    """Return (brightfield_path, {marker: companion_path}, was_extracted).
 
     Runs the optional extraction step if config.input.extract_channels.enabled.
+    When extracting, output files land in `per_image_out_dir` (the per-image
+    output directory) alongside the overlays, NOT in a shared data subdir —
+    extraction is per-run output, not per-batch cached input.
     """
     image_id = row["image_id"]
     source = data_root / row["source"]
@@ -40,23 +44,24 @@ def _resolve_input_paths(row: pd.Series, cfg: dict, data_root: Path
 
     ex_cfg = cfg["input"]["extract_channels"]
     if ex_cfg["enabled"]:
-        out_dir = data_root / ex_cfg["out_subdir"]
         written = extract_one(
             raw_path=source,
             image_id=image_id,
-            out_dir=out_dir,
+            out_dir=per_image_out_dir,
             pages=ex_cfg["pages"],
             markers=cfg["markers"],
         )
         bf_path = written["brightfield"]
         marker_paths = {m: written[m] for m in cfg["markers"]}
+        was_extracted = True
     else:
         # Source IS the brightfield. Companions by convention: <stem>_<marker>.tif
         bf_path = source
         stem = source.stem
         marker_paths = {m: source.parent / f"{stem}_{m}.tif" for m in cfg["markers"]}
+        was_extracted = False
 
-    return bf_path, marker_paths
+    return bf_path, marker_paths, was_extracted
 
 
 def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
@@ -71,8 +76,11 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
         out_dir = out_root
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Resolve / extract inputs
-    bf_path, marker_paths = _resolve_input_paths(row, cfg, data_root)
+    # Resolve / extract inputs. Extracted files (if extraction is enabled) land
+    # in this image's output directory alongside the overlays.
+    bf_path, marker_paths, was_extracted = _resolve_input_paths(
+        row, cfg, data_root, per_image_out_dir=out_dir
+    )
     bf = tifffile.imread(bf_path)
     log(f"  bf: {bf_path} shape={bf.shape} dtype={bf.dtype}")
     if bf.dtype != np.uint8:
@@ -109,9 +117,19 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
             k_nn=lat_cfg["k_nn"],
             axis_band=lat_cfg["axis_band"],
             snap_tolerance=lat_cfg["snap_tolerance"],
+            rotation_deg=lat_cfg.get("rotation_deg", "auto"),
+            min_detected_fraction=lat_cfg.get("min_detected_fraction", 0.25),
+            max_rows=lat_cfg.get("max_rows"),
+            max_cols=lat_cfg.get("max_cols"),
         )
         log(f"  lattice: col={lat_info['col_pitch']:.0f} row={lat_info['row_pitch']:.0f}, "
-            f"{lat_info['n_detected']} detected + {lat_info['n_filled']} filled")
+            f"rotation={lat_info['rotation_deg']:+.3f}° ({lat_info['rotation_source']}), "
+            f"{lat_info['n_detected']} detected + {lat_info['n_filled']} filled "
+            f"(trimmed {lat_info['n_trimmed']} from {lat_info['n_before_trim']})")
+        if lat_info.get("trimmed_rows"):
+            log(f"    dropped rows: {lat_info['trimmed_rows']}")
+        if lat_info.get("trimmed_cols"):
+            log(f"    dropped cols: {lat_info['trimmed_cols']}")
         if cfg["output"]["save_stage_overlays"]:
             viz.save_lattice_overlay(bf, wells, out_dir / "03_lattice_overlay.png", lat_info)
     else:
@@ -194,6 +212,17 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
         wells[col] = row[col]
     wells.to_csv(out_dir / "wells.csv", index=False)
 
+    # Optionally delete the extracted TIFFs now that readout is done. The
+    # check `was_extracted` ensures we never delete user-supplied source files
+    # — only files we ourselves wrote during this run's extraction step.
+    if was_extracted and not cfg["output"].get("keep_extracted", True):
+        for p in [bf_path, *marker_paths.values()]:
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
+        log(f"  removed extracted files (keep_extracted=false)")
+
     # Per-image summary row for batch_summary.csv
     summary = {
         "image_id": image_id,
@@ -238,6 +267,14 @@ def run_batch(config_path: Path) -> dict:
     log(f"chipOid batch: {len(manifest)} images, config={config_path}, "
         f"data_root={data_root}, out_root={out_root}")
 
+    # Dump the EFFECTIVE merged config so the user can always see exactly what
+    # values were used (defaults + their overrides combined). Avoids "what did
+    # it actually run with?" questions when a per-run config sets only a few keys.
+    import yaml as _yaml
+    log("effective config (defaults + your overrides):\n"
+        + "\n".join("  " + ln for ln in
+                    _yaml.safe_dump(cfg, default_flow_style=False, sort_keys=False).splitlines()))
+
     all_wells: list[pd.DataFrame] = []
     summaries: list[dict] = []
     failures: list[tuple[str, str]] = []
@@ -248,7 +285,9 @@ def run_batch(config_path: Path) -> dict:
             all_wells.append(result.wells)
             summaries.append(result.summary)
         except Exception as e:
+            import traceback as _tb
             log(f"  [ERROR] {row['image_id']}: {e!r}")
+            log(_tb.format_exc())
             failures.append((row["image_id"], repr(e)))
 
     if all_wells:

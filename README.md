@@ -35,7 +35,7 @@ The shared `<base>` (here `mcf7_media`) is how chipOid pairs them up. Marker nam
 
 **Option A — split files already** (recommended if you have them): set `input.extract_channels.enabled: false`. Each manifest row's `source` column points at the BF file; chipOid looks for `<base>_<marker>.tif` next to it for each companion.
 
-**Option B — multi-page raw TIFFs**: set `input.extract_channels.enabled: true` and tell it which page is which channel. chipOid splits each input into a BF + one companion per marker, writes them to `<data_root>/extracted/`, then proceeds as in Option A. The brightfield is always converted to 8-bit (per-image percentile clip [1%, 99%] then linear stretch). Companions are written through at native dtype.
+**Option B — multi-page raw TIFFs**: set `input.extract_channels.enabled: true` and tell it which page is which channel. chipOid splits each input into a BF + one companion per marker, writes them to **`output/<image_id>/`** alongside the rest of that image's output (so `data_root` is treated as read-only — the pipeline never writes there), then proceeds as in Option A. The brightfield is always converted to 8-bit (per-image percentile clip [1%, 99%] then linear stretch). Companions are written through at native dtype. Set `output.keep_extracted: false` to delete the split files after readout.
 
 ## Pipeline stages
 
@@ -94,9 +94,18 @@ Columns:
 - **`input.extract_channels.enabled`** — see "Two ways to feed data" above.
 - **`markers`** — list of marker (channel) names. Defaults to `[green, red]`.
 - **`detection.*`** — Hough/Canny parameters. See below for the bit-depth caveat.
-- **`lattice.*`** — pitch estimation tolerances. Defaults assume an axis-aligned grid.
+- **`lattice.*`** — pitch and rotation estimation, plus row/col trimming. See "Lattice options" below.
 - **`readout.margin / annulus_inner / annulus_outer`** — sampling geometry around each well.
 - **`readout.metrics`** — which per-well columns to write. See `METRICS.md`.
+
+### Lattice options
+
+The lattice fit estimates row/col pitch from the Hough detections, fits a grid to them, and snaps detections to grid points (filling in any wells Hough missed). Key knobs:
+
+- **`lattice.rotation_deg: auto`** (default). The pipeline estimates lattice rotation from the data via a robust circular-median of nearest-neighbor angles. Override with a numeric value in degrees (e.g. `rotation_deg: 0` to force axis-aligned) if the estimator misbehaves on a difficult image.
+- **`lattice.min_detected_fraction: 0.25`** (default). After snapping, any row or column where fewer than this fraction of wells are Hough-detected gets dropped. Catches the failure mode where the lattice bbox extends beyond the actual chip and generates rows of all-filled-no-detected wells. Set to `0` to disable.
+- **`lattice.max_rows`** / **`lattice.max_cols`** (default `null`). Optional hard caps applied AFTER the density filter. Use only when you know the chip's true layout — highest-index rows/cols are trimmed first.
+- **`lattice.snap_tolerance: 30.0`** (default). Max pixel distance between a predicted grid point and the nearest Hough detection for the well to be considered "detected" rather than "filled".
 
 ### Detection parameters and bit-depth
 
@@ -109,18 +118,20 @@ If you skip the extraction step **and** your BF is not 8-bit, you must set Canny
 ```
 output/
 ├── <image_id>/
+│   ├── <image_id>.tif            BF (if extracted; gated by output.keep_extracted)
+│   ├── <image_id>_<marker>.tif   one per marker (same gating)
 │   ├── 01_canny.png              edge map
 │   ├── 02_hough_overlay.png      detected circles on BF
-│   ├── 03_lattice_overlay.png    BF with detected (lime) + filled (magenta) wells
-│   ├── 04_intensity_<marker>.png BF colored by per-well signal (one per marker)
-│   ├── 06_histograms.png         signal distributions per marker
-│   ├── 07_scatter.png            marker-A vs marker-B per well (if ≥2 markers)
-│   ├── review.png                ONE-PANEL composite for quick batch review
+│   ├── 03_lattice_overlay.png    BF with detected (lime) + filled (magenta) wells; labeled by well_id
+│   ├── 04_intensity_<marker>.png BF with filled, semi-transparent disks per well, colored by signal
+│   ├── 06_histograms.png         signal distributions per marker (skip via output.save_diagnostics)
+│   ├── 07_scatter.png            marker-A vs marker-B per well (same gate)
+│   ├── review.png                composite for quick batch review (lattice + each marker + scatter + hist)
 │   ├── hough_centers.csv         raw detections (for debugging)
 │   └── wells.csv                 per-image table
 ├── wells_all.csv                 consolidated batch table (every well, every image)
-├── batch_summary.csv             one row per image: counts, pitches, signal quantiles
-└── run.log                       full processing log
+├── batch_summary.csv             one row per image: counts, pitches, rotation, signal quantiles
+└── run.log                       full processing log (includes the effective merged config)
 ```
 
 `wells_all.csv` is the file to point downstream analysis at. See `METRICS.md` for column-by-column definitions.

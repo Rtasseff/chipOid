@@ -3,8 +3,10 @@
 #   mcf7_media  — media control
 #
 # Both sources are multi-page raw TIFFs (BF=page 0, green=page 1, red=page 2)
-# so extraction is enabled. The pipeline writes split files to
-# data/extracted/<image_id>{,_green,_red}.tif before detection runs.
+# so extraction is enabled. The pipeline writes the split files into the
+# per-image output directory: output/<image_id>/<image_id>{,_green,_red}.tif
+# and leaves them there (output.keep_extracted defaults to true). The
+# pipeline never writes to data_root.
 
 input:
   manifest: manifest_laser_media.csv
@@ -15,7 +17,6 @@ input:
       brightfield: 0
       green: 1
       red: 2
-    out_subdir: extracted
 
 markers:
   - green
