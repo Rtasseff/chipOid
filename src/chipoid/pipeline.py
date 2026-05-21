@@ -1,11 +1,19 @@
 """Batch orchestrator. Reads config + manifest, runs each image end-to-end,
 writes per-image artifacts and consolidated batch CSVs.
+
+Two entry points:
+  - run_batch(config_path): the CLI entry point. Loads a YAML config + CSV
+    manifest from disk, then delegates to run_batch_in_memory.
+  - run_batch_in_memory(cfg, manifest, log): the in-memory entry point used
+    by the GUI. The GUI builds its own config dict and manifest DataFrame
+    from widget state + folder scan, and passes a log callback that pushes
+    messages into the GUI's log queue.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -15,7 +23,7 @@ from .config import load_config
 from .detect import detect_wells
 from .extract import extract_one
 from .lattice import fit_lattice
-from .manifest import load_manifest, metadata_columns
+from .manifest import load_manifest, metadata_columns, validate_manifest
 from .readout import attach_metrics, measure_marker, preflight
 from . import viz
 
@@ -245,7 +253,7 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
 
 
 def run_batch(config_path: Path) -> dict:
-    """Top-level entry: load config + manifest, process every image, write batch CSVs."""
+    """CLI entry point: load config + manifest from disk, then delegate."""
     cfg = load_config(config_path)
 
     config_dir = config_path.parent
@@ -256,24 +264,61 @@ def run_batch(config_path: Path) -> dict:
             manifest_path = cand
     manifest = load_manifest(manifest_path)
 
+    return run_batch_in_memory(cfg, manifest, log=None, config_label=str(config_path))
+
+
+def run_batch_in_memory(
+    cfg: dict,
+    manifest: pd.DataFrame,
+    log: Callable[[str], None] | None = None,
+    *,
+    config_label: str = "<in-memory>",
+) -> dict:
+    """Core implementation. Process every row of `manifest` using `cfg`.
+
+    Args:
+      cfg:           already-validated config dict (e.g. from `load_config`).
+      manifest:      already-validated manifest DataFrame (e.g. from
+                     `load_manifest` or `manifest.validate_manifest`).
+      log:           optional message sink (msg: str) called from THIS thread.
+                     The GUI passes a callable that pushes onto a queue.Queue.
+                     If None, falls back to print() + writing run.log.
+      config_label:  label shown in the opening log line. The CLI sets this to
+                     the YAML path; the GUI can set its own identifier.
+
+    Returns: same dict as the old run_batch:
+      {"n_images", "n_success", "n_failed", "out_root"}.
+    """
+    manifest = validate_manifest(manifest.copy(), where="manifest")
+
     data_root = Path(cfg["input"]["data_root"])
     out_root = Path(cfg["output"]["dir"]); out_root.mkdir(parents=True, exist_ok=True)
 
+    # Logging plumbing:
+    #   - If `log` was supplied (GUI), use it directly. We ALSO open run.log so
+    #     post-mortem debugging via the file is unaffected.
+    #   - If `log` is None (CLI default), use print + run.log just like before.
     log_path = out_root / "run.log"
     log_fh = open(log_path, "w")
-    def log(msg):
-        print(msg); log_fh.write(msg + "\n"); log_fh.flush()
+    if log is None:
+        def _log(msg: str) -> None:
+            print(msg)
+            log_fh.write(msg + "\n"); log_fh.flush()
+    else:
+        external_log = log
+        def _log(msg: str) -> None:
+            external_log(msg)
+            log_fh.write(msg + "\n"); log_fh.flush()
 
-    log(f"chipOid batch: {len(manifest)} images, config={config_path}, "
-        f"data_root={data_root}, out_root={out_root}")
+    _log(f"chipOid batch: {len(manifest)} images, config={config_label}, "
+         f"data_root={data_root}, out_root={out_root}")
 
     # Dump the EFFECTIVE merged config so the user can always see exactly what
-    # values were used (defaults + their overrides combined). Avoids "what did
-    # it actually run with?" questions when a per-run config sets only a few keys.
+    # values were used (defaults + their overrides combined).
     import yaml as _yaml
-    log("effective config (defaults + your overrides):\n"
-        + "\n".join("  " + ln for ln in
-                    _yaml.safe_dump(cfg, default_flow_style=False, sort_keys=False).splitlines()))
+    _log("effective config (defaults + your overrides):\n"
+         + "\n".join("  " + ln for ln in
+                     _yaml.safe_dump(cfg, default_flow_style=False, sort_keys=False).splitlines()))
 
     all_wells: list[pd.DataFrame] = []
     summaries: list[dict] = []
@@ -281,31 +326,31 @@ def run_batch(config_path: Path) -> dict:
 
     for _, row in manifest.iterrows():
         try:
-            result = process_image(row, cfg, data_root, out_root, log)
+            result = process_image(row, cfg, data_root, out_root, _log)
             all_wells.append(result.wells)
             summaries.append(result.summary)
         except Exception as e:
             import traceback as _tb
-            log(f"  [ERROR] {row['image_id']}: {e!r}")
-            log(_tb.format_exc())
+            _log(f"  [ERROR] {row['image_id']}: {e!r}")
+            _log(_tb.format_exc())
             failures.append((row["image_id"], repr(e)))
 
     if all_wells:
         consolidated = pd.concat(all_wells, ignore_index=True)
         out_csv = out_root / cfg["output"]["consolidated_csv"]
         consolidated.to_csv(out_csv, index=False)
-        log(f"\nconsolidated wells: {out_csv}  ({len(consolidated)} rows)")
+        _log(f"\nconsolidated wells: {out_csv}  ({len(consolidated)} rows)")
 
     if summaries:
         summary_df = pd.DataFrame(summaries)
         summary_path = out_root / cfg["output"]["batch_summary_csv"]
         summary_df.to_csv(summary_path, index=False)
-        log(f"batch summary:     {summary_path}")
+        _log(f"batch summary:     {summary_path}")
 
     if failures:
-        log(f"\n{len(failures)} image(s) failed:")
+        _log(f"\n{len(failures)} image(s) failed:")
         for image_id, err in failures:
-            log(f"  - {image_id}: {err}")
+            _log(f"  - {image_id}: {err}")
 
     log_fh.close()
     return {

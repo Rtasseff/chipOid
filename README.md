@@ -56,6 +56,26 @@ This is what makes the pipeline robust to dimmer or noisier images: even if Houg
 
 **The consequence is single-chip-per-image.** chipOid fits ONE lattice per image. If a single image contains two physically separated chips (different lattice origins, or different rotations), the single-lattice fit averages between them, and snapping mislabels which chip each well belongs to. **Split multi-chip images into one chip per image upstream** before running chipOid.
 
+## Desktop GUI (Developer Version v0.9)
+
+A Tkinter desktop app exposes every pipeline option with inline notes. Two entry points:
+
+```bash
+# Launch from a Python install:
+chipoid-gui                # console script installed by pyproject
+python -m chipoid.gui      # equivalent
+
+# Or build a self-contained Windows .exe:
+# See docs/WINDOWS_DESKTOP_BUNDLE.md for the full procedure.
+python -m PyInstaller --clean --noconfirm chipoid_gui.spec
+```
+
+The GUI builds its config dict and manifest in memory from the input folder
+you pick — no intermediate YAML/manifest files are written. Optional
+filename parsing splits `<base>` on `_` and assigns user-typed labels to
+each chunk, attaching the parsed values as metadata columns on
+`wells_all.csv`.
+
 ## Install
 
 ```bash

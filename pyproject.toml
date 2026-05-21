@@ -26,9 +26,15 @@ dev = [
     "pytest>=7.4",
     "black>=23.0",
 ]
+# Build-time deps for the Windows GUI bundle. Tkinter itself is stdlib (shipped
+# with the official Python installer on Windows). See docs/WINDOWS_DESKTOP_BUNDLE.md.
+build = [
+    "pyinstaller>=6.0",
+]
 
 [project.scripts]
 chipoid = "chipoid.cli:main"
+chipoid-gui = "chipoid.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

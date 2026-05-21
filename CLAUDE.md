@@ -12,6 +12,8 @@ The deliverable is per-well intensity statistics in a CSV — chipOid does not c
 - Package: `src/chipoid/` with submodules (config, manifest, extract, detect, lattice, readout, viz, pipeline, cli)
 - Installed in editable mode: `pip install -e .`
 - CLI entry point: `chipoid` (subcommands: `run`, `extract`)
+- GUI entry point: `chipoid-gui` or `python -m chipoid.gui` (Tkinter; Developer Version v0.9)
+- Tests: `pytest tests/` (41 tests, all green)
 - Dependencies: numpy, scipy, scikit-image, tifffile, pandas, matplotlib, pyyaml
 
 ## Storage (this machine)
@@ -42,6 +44,9 @@ Marker names are user-configurable in the config (`markers: [green, red]` by def
 | `README.md` | User-facing docs (install, run, config, outputs, conventions) |
 | `src/chipoid/pipeline.py` | Batch orchestrator (the canonical "what runs in what order") |
 | `src/chipoid/readout.py` | Correctness-critical — sampling geometry, sanity checks. Heavily commented inline; review carefully on changes since outputs are hard to spot-check. |
+| `src/chipoid/gui/` | Tkinter desktop app. `app.py` is the main window; `config_form.py` builds widgets; `config_form_logic.py` has the pure validation logic (tested without Tk). `manifest_builder.py` + `filename_schema.py` turn a folder of TIFFs into an in-memory manifest. `jobs.py` runs the pipeline on a worker thread; `logging_handler.py` routes log lines back to the main thread via a queue. |
+| `chipoid_gui.spec` + `docs/WINDOWS_DESKTOP_BUNDLE.md` | PyInstaller spec and build instructions for the Windows `.exe`. |
+| `tests/` | Unit tests for pure (non-Tk) GUI logic + an integration test for `pipeline.run_batch_in_memory`. Run with `pytest tests/`. |
 
 ## Running
 
