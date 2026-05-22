@@ -22,13 +22,18 @@ PyInstaller. Modelled on SegOid's `docs/WINDOWS_DESKTOP_BUNDLE.md`.
    succeed (it ships in the official Python installer by default).
 3. **A clone of this repo.** Easiest: clone the repo onto the Windows
    filesystem directly. WSL paths (`\\wsl$\Ubuntu\...` or
-   `\\wsl.localhost\Ubuntu\...`) work but have two well-known quirks:
+   `\\wsl.localhost\Ubuntu\...`) work but have three well-known quirks:
    - PyInstaller's source-tree scan is noticeably slower over the share.
    - `pip install --upgrade pip` fails because pip can't replace its own
      executable on a network path; use `python -m pip install --upgrade pip`
      instead (or just skip the pip upgrade).
-   If either bites, copy the repo to a native location (e.g.
-   `C:\Users\<you>\chipOid`) and build from there.
+   - The project-root `dist/` and `build/` may be symlinks (to D drive).
+     Windows over the 9p share can't reliably resolve Linux symlinks as
+     directories, so PyInstaller's default `--distpath` / `--workpath`
+     trip over `FileExistsError [WinError 183]`. Pass the flags explicitly
+     pointing at native Windows paths (see Build steps below).
+   If any of these bite, copy the repo to a native location (e.g.
+   `C:\Users\<you>\chipOid`) and build from there with no extra flags.
 
 ## Build steps
 
@@ -47,11 +52,29 @@ python -m pip install --upgrade pip
 pip install numpy scipy scikit-image tifffile imagecodecs pandas matplotlib pillow pyyaml pyinstaller
 
 # 3) Build the .exe. --clean discards any stale PyInstaller caches.
-python -m PyInstaller --clean --noconfirm chipoid_gui.spec
+#
+# IMPORTANT when building from a WSL share path (\\wsl.localhost\... /
+# \\wsl$\...): point --distpath and --workpath at native Windows paths.
+# PyInstaller calls os.makedirs(..., exist_ok=True) and Windows over the
+# 9p share can't reliably resolve a Linux symlink as a directory, so the
+# default `dist\` and `build\` (which on this checkout are WSL symlinks)
+# blow up with WinError 183 ("file already exists"). Writing to native
+# Windows paths bypasses the symlink entirely — and the result lands in
+# the same NTFS directory the WSL symlink points to.
+python -m PyInstaller --clean --noconfirm `
+  --distpath D:\projects\chipOid\dist `
+  --workpath D:\projects\chipOid\build `
+  chipoid_gui.spec
+
+# If you cloned to a native Windows path (e.g. C:\Users\you\chipOid),
+# you can skip the --distpath/--workpath flags entirely:
+#   python -m PyInstaller --clean --noconfirm chipoid_gui.spec
 
 # 4) Output:
-#    dist\chipOid.exe   <- the standalone executable
-#    build\             <- PyInstaller scratch; safe to delete
+#    D:\projects\chipOid\dist\chipOid.exe   <- the standalone executable
+#    D:\projects\chipOid\build\             <- PyInstaller scratch; safe to delete
+# From the WSL side, the same file is reachable as dist/chipOid.exe via
+# the project-root symlink.
 ```
 
 The build takes 2–4 minutes on a modern laptop. Final exe size is around
@@ -112,6 +135,16 @@ If you customised the spec and lost it, add it back.
 If you pointed Output at a path under `\\wsl$\...`, WSL share permissions
 can refuse writes from a native Windows process. Pick a normal Windows
 folder (e.g. `C:\Users\<you>\chipoid_runs\test1`).
+
+### `FileExistsError: [WinError 183] Cannot create a file when that file already exists: '\\\\wsl.localhost\\...\\dist'`
+
+PyInstaller's `os.makedirs(..., exist_ok=True)` is choking because Windows
+over the WSL 9p share returns False from `os.path.isdir()` on a Linux
+symlink-to-directory. The fix is in the build steps above: pass
+`--distpath D:\projects\chipOid\dist --workpath D:\projects\chipOid\build`
+(or wherever your D-drive target lives) to bypass the symlink. The .exe
+ends up in the same NTFS directory either way; you're just sidestepping
+the symlink layer.
 
 ### Build itself fails with "Cannot find module 'X'"
 
