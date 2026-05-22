@@ -11,6 +11,7 @@ dist/
 
 # Virtual environments
 .venv/
+.venv-build/
 venv/
 ENV/
 env/
@@ -29,12 +30,16 @@ Thumbs.db
 # Project-local, machine-specific
 LOCAL_SETUP.md
 
-# Data and outputs live on D drive via symlinks; never commit them
-# (patterns match both the symlink itself and any real-dir variant)
+# Data, outputs, and build artifacts live on D drive via symlinks; never
+# commit them. Patterns with leading slash match the symlink itself
+# (treated as a regular path by git); the trailing-slash variants match
+# any real-dir version in case the symlinks are ever absent.
 /data
 /output
 /runs
 /inference
+/dist
+/build
 data/
 output/
 runs/
