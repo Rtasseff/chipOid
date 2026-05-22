@@ -138,8 +138,8 @@ If you skip the extraction step **and** your BF is not 8-bit, you must set Canny
 ```
 output/
 ├── <image_id>/
-│   ├── <image_id>.tif            BF (if extracted; gated by output.keep_extracted)
-│   ├── <image_id>_<marker>.tif   one per marker (same gating)
+│   ├── brightfield.tif          BF (if extracted; gated by output.keep_extracted)
+│   ├── <marker>.tif             one per marker (same gating); e.g. green.tif, red.tif
 │   ├── 01_canny.png              edge map
 │   ├── 02_hough_overlay.png      detected circles on BF
 │   ├── 03_lattice_overlay.png    BF with detected (lime) + filled (magenta) wells; labeled by well_id

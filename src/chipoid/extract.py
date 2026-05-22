@@ -14,9 +14,20 @@ Companion (fluorescence) channels are written through as their NATIVE dtype
 (typically uint16). Absolute intensity matters for these, so we never rescale
 or clip them — what's in the raw file is what gets measured.
 
-Output naming follows the project-wide companion convention:
-    <out_dir>/<image_id>.tif                — brightfield (8-bit)
-    <out_dir>/<image_id>_<marker>.tif       — one per marker (native dtype)
+Output naming inside the per-image extract directory uses SHORT, fixed
+names (the directory itself already encodes `image_id`):
+
+    <out_dir>/brightfield.tif    — brightfield (8-bit)
+    <out_dir>/<marker>.tif       — one per marker (native dtype)
+
+We deliberately do NOT repeat `image_id` inside the filename, because the
+manifest can carry image IDs that are 100+ characters long (e.g. when a
+.czi → .tif conversion embeds the full instrument-side filename). Windows
+caps file paths at 260 characters by default, and repeating a long
+image_id inside its own subdirectory pushed real-world paths past that
+limit (e.g. `<long-OneDrive-path>/out/<107-char-id>/<107-char-id>.tif` →
+303 chars). The pipeline never relies on these filenames — it uses the
+dict returned by `extract_one` — so the rename is internally invisible.
 """
 from __future__ import annotations
 
@@ -79,16 +90,20 @@ def extract_one(raw_path: Path, image_id: str, out_dir: Path,
             )
 
         # Brightfield: always 8-bit via clip-and-stretch (see module docstring).
+        # Output filename is fixed ("brightfield.tif") rather than carrying
+        # `image_id` — see module docstring for the long-path rationale.
         bf = tif.pages[pages["brightfield"]].asarray()
         bf8 = _bf_to_uint8(bf)
-        bf_path = out_dir / f"{image_id}.tif"
+        bf_path = out_dir / "brightfield.tif"
         tifffile.imwrite(bf_path, bf8, photometric="minisblack")
         written["brightfield"] = bf_path
 
         # Companions: written through verbatim (native dtype, no scaling).
+        # Each lands at <marker>.tif (no image_id prefix); the per-image
+        # directory already encodes which image they belong to.
         for m in markers:
             arr = tif.pages[pages[m]].asarray()
-            p = out_dir / f"{image_id}_{m}.tif"
+            p = out_dir / f"{m}.tif"
             tifffile.imwrite(p, arr, photometric="minisblack")
             written[m] = p
 

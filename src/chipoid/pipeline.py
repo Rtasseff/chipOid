@@ -299,7 +299,12 @@ def run_batch_in_memory(
     #     post-mortem debugging via the file is unaffected.
     #   - If `log` is None (CLI default), use print + run.log just like before.
     log_path = out_root / "run.log"
-    log_fh = open(log_path, "w")
+    # encoding="utf-8" is essential on Windows. Without it Python uses the
+    # locale encoding (cp1252 on en-US Windows) which can't encode characters
+    # we use in log messages — e.g. "≈" in the readout-geometry line and
+    # "°" in the lattice-rotation line. Both would crash the pipeline on
+    # Windows the first time they appear.
+    log_fh = open(log_path, "w", encoding="utf-8")
     if log is None:
         def _log(msg: str) -> None:
             print(msg)
