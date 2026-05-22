@@ -21,8 +21,14 @@ PyInstaller. Modelled on SegOid's `docs/WINDOWS_DESKTOP_BUNDLE.md`.
    fine). Confirm Tkinter is included: `python -c "import tkinter"` should
    succeed (it ships in the official Python installer by default).
 3. **A clone of this repo.** Easiest: clone the repo onto the Windows
-   filesystem directly. WSL paths (`\\wsl$\Ubuntu\...`) work but can be
-   slow during the PyInstaller scan.
+   filesystem directly. WSL paths (`\\wsl$\Ubuntu\...` or
+   `\\wsl.localhost\Ubuntu\...`) work but have two well-known quirks:
+   - PyInstaller's source-tree scan is noticeably slower over the share.
+   - `pip install --upgrade pip` fails because pip can't replace its own
+     executable on a network path; use `python -m pip install --upgrade pip`
+     instead (or just skip the pip upgrade).
+   If either bites, copy the repo to a native location (e.g.
+   `C:\Users\<you>\chipOid`) and build from there.
 
 ## Build steps
 
@@ -33,7 +39,11 @@ cd <path-to>\chipOid
 # 2) Install build-time dependencies into a fresh venv (recommended):
 python -m venv .venv-build
 .venv-build\Scripts\Activate.ps1
-pip install --upgrade pip
+# Upgrading pip is optional. If you do upgrade, use the `python -m pip`
+# form — bare `pip install --upgrade pip` fails on UNC paths
+# (\\wsl.localhost\... or \\wsl$\...) because pip can't replace its own
+# running executable. Just skip this line if 26.0.1+ is already installed.
+python -m pip install --upgrade pip
 pip install numpy scipy scikit-image tifffile imagecodecs pandas matplotlib pillow pyyaml pyinstaller
 
 # 3) Build the .exe. --clean discards any stale PyInstaller caches.
