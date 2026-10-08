@@ -158,23 +158,24 @@ The GUI branch adds both module names to the PyInstaller spec, so keep these exa
 
 ## Status
 
-- [ ] Config + validation
-- [ ] inclusion.py + wiring
-- [ ] export.py + write guards
-- [ ] viz marking
-- [ ] Tests
-- [ ] EXP24 acceptance tables
+- [x] Config + validation
+- [x] inclusion.py + wiring
+- [x] export.py + write guards
+- [x] viz marking
+- [x] Tests
+- [x] EXP24 acceptance tables
+- Tests: 90 passed (baseline 41).
+- Deviations: (1) `config._validate` calls `inclusion.resolve_thresholds` instead of duplicating the checks (inf is also rejected). (2) With inclusion on, the scatter (07 and review) plots the metric the thresholds apply to (`signal` or `signal_median`) so the lines sit on the plotted axes; `save_review_figure` got extra optional args `scatter_signals`, `thresholds`, `scatter_metric`; `save_scatter`'s `thresholds` is an `(x, y)` tuple. (3) With inclusion on, the missing-companion check runs right after input resolution (before detection), so no partial outputs. (4) Overlays are drawn after all markers are measured (needed so `included` is known); log lines and outputs are unchanged when off.
 - [ ] PR open
 
 ## Notes for the docs pass
 
-<!-- Fill in:
-     - config keys, each with a one-line meaning;
-     - the per-well columns and exclusion reasons;
-     - batch_summary columns and log lines;
-     - workbook sheets;
-     - anything a user needs to know (e.g. thresholds are raw counts after
-       bg subtraction, so they depend on exposure). -->
+- Config: `inclusion.enabled` (default false), `.metric` (signal | signal_median), `.min_signal` (number, or {marker: number} covering every marker), `.exclude_filled` (false), `.exclude_partial` (true); `output.xlsx` (true).
+- Rule: keep if ANY marker's metric >= its threshold (>=; NaN = below). Per-well columns `included`, `exclude_reason` (`filled` > `partial_disk` > `below_threshold`; "" if included), after `dist_to_det`, only when enabled.
+- batch_summary (enabled): `n_included`, `min_signal_<marker>`. run.log: version on line 1, `inclusion: on/off` line after the config dump, per-image `inclusion: n/N wells included (...)` line.
+- Workbook `<stem of consolidated_csv>.xlsx`: `all_wells`, `included_wells` (only if inclusion on), `summary`, `settings` (key/value; chipoid_version, written_at, every effective-config leaf). Values only; header frozen + autofilter.
+- Users: thresholds are raw counts after bg subtraction, so they depend on exposure/gain; one setting per batch. A missing companion fails that image when inclusion is on. A write blocked by Excel (PermissionError) is a `[WARN]` and the run continues. `settings` contains absolute data_root / output.dir paths (account name on Windows).
+- Pre-existing, not fixed: `save_histograms` (06) reads `wells["signal_<m>"]`, so any image fails with KeyError if `signal` is not in `readout.metrics`; a companion shape mismatch raises `SystemExit`, which the per-image `except Exception` does not catch, so it kills the batch.
 
 ## Questions for the coordinator
 

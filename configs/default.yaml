@@ -112,6 +112,27 @@ readout:
     - partial_disk
 
 # ──────────────────────────────────────────────────────────────────────────
+# Stage 4 — Inclusion (optional noise/occupancy QC)
+# ──────────────────────────────────────────────────────────────────────────
+# Excludes a well only when EVERY marker's signal is below its threshold
+# (keep if ANY marker >= its threshold; a value exactly at the threshold is
+# kept, NaN counts as below). Empty wells have both signals in the noise, so
+# their green/(green+red) ratio sits near 50% and drags averages there.
+# This is a fluorescence proxy for "is there anything in this well", not a cell
+# detector or a live/dead classifier. Thresholds are raw counts after
+# background subtraction, so they depend on exposure/gain: choose them per
+# experiment and use one setting for every image in a batch.
+# Adds per-well columns `included` / `exclude_reason` to the CSVs.
+inclusion:
+  enabled: false                  # false = v0.9 behaviour (all wells included)
+  metric: signal                  # signal | signal_median
+  min_signal: 50                  # one number for every marker, or per marker:
+                                  #   min_signal: {green: 50, red: 50}
+                                  # (a mapping needs an entry for EVERY marker)
+  exclude_filled: false           # also exclude lattice-filled wells
+  exclude_partial: true           # also exclude wells whose signal disk is clipped by the image edge
+
+# ──────────────────────────────────────────────────────────────────────────
 # Output
 # ──────────────────────────────────────────────────────────────────────────
 output:
@@ -122,6 +143,11 @@ output:
   save_diagnostics: true          # histograms + scatter
   consolidated_csv: wells_all.csv
   batch_summary_csv: batch_summary.csv
+
+  # Excel workbook written next to the consolidated CSV (same name, .xlsx):
+  # sheets all_wells, included_wells (only if inclusion is on), summary, settings.
+  # If the file is open in Excel a warning is logged and the CSVs are still written.
+  xlsx: true
 
   # When extract_channels.enabled=true, the split BF + companion TIFFs land in
   # output/<image_id>/ alongside the overlays. Set to false to delete them

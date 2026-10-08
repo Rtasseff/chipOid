@@ -19,13 +19,15 @@ import numpy as np
 import pandas as pd
 import tifffile
 
+from . import __version__
 from .config import load_config
 from .detect import detect_wells
+from .export import safe_write, write_workbook
 from .extract import extract_one
 from .lattice import fit_lattice
 from .manifest import load_manifest, metadata_columns, validate_manifest
 from .readout import attach_metrics, measure_marker, preflight
-from . import viz
+from . import inclusion, viz
 
 
 @dataclass
@@ -89,6 +91,18 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
     bf_path, marker_paths, was_extracted = _resolve_input_paths(
         row, cfg, data_root, per_image_out_dir=out_dir
     )
+    inc_cfg = cfg.get("inclusion") or {}
+    inc_on = bool(inc_cfg.get("enabled"))
+    if inc_on:
+        # Every marker's signal feeds the inclusion rule, so a missing companion
+        # is an error for this image (the batch continues with the others).
+        for marker, mpath in marker_paths.items():
+            if not mpath.exists():
+                raise ValueError(
+                    f"[{image_id}] inclusion is enabled but the '{marker}' "
+                    f"companion is missing: {mpath}"
+                )
+
     bf = tifffile.imread(bf_path)
     log(f"  bf: {bf_path} shape={bf.shape} dtype={bf.dtype}")
     if bf.dtype != np.uint8:
@@ -166,6 +180,7 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
         f"expected signal_px≈{pf['expected_signal_px']:.0f}")
 
     marker_signals: dict[str, np.ndarray] = {}
+    measurements: dict[str, dict[str, np.ndarray]] = {}  # full measure_marker output
     for marker, mpath in marker_paths.items():
         if not mpath.exists():
             log(f"  [WARN] missing companion {marker}: {mpath}; skipping")
@@ -179,16 +194,41 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
         m = measure_marker(img, wells, r_well, margin, ai, ao)
         attach_metrics(wells, marker, m, requested_metrics)
         marker_signals[marker] = m["signal"]
+        measurements[marker] = m
         log(f"  {marker}: signal median={np.nanmedian(m['signal']):.1f} "
             f"p5={np.nanpercentile(m['signal'],5):.1f} "
             f"p95={np.nanpercentile(m['signal'],95):.1f}")
 
-        if cfg["output"]["save_stage_overlays"]:
+    # Stage 4 — Inclusion (optional). Uses the measurement arrays directly, not
+    # the `wells` columns, which only exist if listed in readout.metrics.
+    included = None
+    thresholds = None
+    inc_counts = None
+    if inc_on:
+        thresholds = inclusion.resolve_thresholds(inc_cfg, list(marker_paths))
+        included, reason = inclusion.apply_inclusion(
+            wells["source"].to_numpy(), measurements, thresholds,
+            inc_cfg["metric"], inc_cfg["exclude_filled"], inc_cfg["exclude_partial"],
+        )
+        at = wells.columns.get_loc("dist_to_det") + 1
+        wells.insert(at, "included", included)
+        wells.insert(at + 1, "exclude_reason", reason)
+        inc_counts = inclusion.summarize(included, reason)
+        log("  " + inclusion.format_image_line(inc_counts))
+
+    if cfg["output"]["save_stage_overlays"]:
+        for marker, vals in marker_signals.items():
             viz.save_intensity_overlay(
-                bf, wells, m["signal"], out_dir / f"04_intensity_{marker}.png",
+                bf, wells, vals, out_dir / f"04_intensity_{marker}.png",
                 title=f"{marker}: signal (mean - bg, 16-bit)",
                 label=f"signal ({marker})",
+                included=included,
             )
+
+    # With inclusion on, the scatter shows the metric the thresholds apply to,
+    # so the threshold lines sit on the plotted axes.
+    scatter_vals = ({m: measurements[m][inc_cfg["metric"]] for m in marker_signals}
+                    if inc_on else marker_signals)
 
     # Diagnostics
     if cfg["output"]["save_diagnostics"] and marker_signals:
@@ -200,11 +240,20 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
         markers_list = list(marker_signals.keys())
         if len(markers_list) >= 2:
             m1, m2 = markers_list[:2]
-            viz.save_scatter(
-                wells, f"signal_{m1}", f"signal_{m2}",
-                f"{m1} signal", f"{m2} signal",
-                out_dir / "07_scatter.png",
-            )
+            if inc_on:
+                scatter_df = pd.DataFrame({m1: scatter_vals[m1], m2: scatter_vals[m2]})
+                viz.save_scatter(
+                    scatter_df, m1, m2,
+                    f"{m1} {inc_cfg['metric']}", f"{m2} {inc_cfg['metric']}",
+                    out_dir / "07_scatter.png",
+                    included=included, thresholds=(thresholds[m1], thresholds[m2]),
+                )
+            else:
+                viz.save_scatter(
+                    wells, f"signal_{m1}", f"signal_{m2}",
+                    f"{m1} signal", f"{m2} signal",
+                    out_dir / "07_scatter.png",
+                )
 
     # Composite review
     if cfg["output"]["save_review_figure"] and marker_signals:
@@ -212,13 +261,18 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
             bf, wells, marker_signals,
             out_dir / "review.png",
             image_id=image_id, lattice_info=lat_info, n_hough=len(centers),
+            included=included,
+            scatter_signals=scatter_vals if inc_on else None,
+            thresholds=thresholds,
+            scatter_metric=inc_cfg["metric"] if inc_on else "signal",
         )
 
     # Per-image CSV
     wells.insert(0, "image_id", image_id)
     for col in metadata_columns(pd.DataFrame([row])):
         wells[col] = row[col]
-    wells.to_csv(out_dir / "wells.csv", index=False)
+    wells_csv = out_dir / "wells.csv"
+    safe_write(wells_csv, lambda: wells.to_csv(wells_csv, index=False), log)
 
     # Optionally delete the extracted TIFFs now that readout is done. The
     # check `was_extracted` ensures we never delete user-supplied source files
@@ -248,6 +302,10 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
             summary[f"signal_{marker}_p5"] = float(np.percentile(sig_f, 5))
             summary[f"signal_{marker}_median"] = float(np.median(sig_f))
             summary[f"signal_{marker}_p95"] = float(np.percentile(sig_f, 95))
+    if inc_on:
+        summary["n_included"] = inc_counts["n_included"]
+        for marker, t in thresholds.items():
+            summary[f"min_signal_{marker}"] = t
 
     return ImageResult(image_id=image_id, wells=wells, summary=summary)
 
@@ -315,7 +373,7 @@ def run_batch_in_memory(
             external_log(msg)
             log_fh.write(msg + "\n"); log_fh.flush()
 
-    _log(f"chipOid batch: {len(manifest)} images, config={config_label}, "
+    _log(f"chipOid {__version__} batch: {len(manifest)} images, config={config_label}, "
          f"data_root={data_root}, out_root={out_root}")
 
     # Dump the EFFECTIVE merged config so the user can always see exactly what
@@ -324,6 +382,9 @@ def run_batch_in_memory(
     _log("effective config (defaults + your overrides):\n"
          + "\n".join("  " + ln for ln in
                      _yaml.safe_dump(cfg, default_flow_style=False, sort_keys=False).splitlines()))
+    inc_cfg = cfg.get("inclusion") or {}
+    inc_on = bool(inc_cfg.get("enabled"))
+    _log(inclusion.describe(inc_cfg, list(cfg["markers"])))
 
     all_wells: list[pd.DataFrame] = []
     summaries: list[dict] = []
@@ -343,14 +404,18 @@ def run_batch_in_memory(
     if all_wells:
         consolidated = pd.concat(all_wells, ignore_index=True)
         out_csv = out_root / cfg["output"]["consolidated_csv"]
-        consolidated.to_csv(out_csv, index=False)
-        _log(f"\nconsolidated wells: {out_csv}  ({len(consolidated)} rows)")
+        if safe_write(out_csv, lambda: consolidated.to_csv(out_csv, index=False), _log):
+            _log(f"\nconsolidated wells: {out_csv}  ({len(consolidated)} rows)")
 
-    if summaries:
-        summary_df = pd.DataFrame(summaries)
+    summary_df = pd.DataFrame(summaries) if summaries else None
+    if summary_df is not None:
         summary_path = out_root / cfg["output"]["batch_summary_csv"]
-        summary_df.to_csv(summary_path, index=False)
-        _log(f"batch summary:     {summary_path}")
+        if safe_write(summary_path, lambda: summary_df.to_csv(summary_path, index=False), _log):
+            _log(f"batch summary:     {summary_path}")
+
+    if all_wells and cfg["output"].get("xlsx", True):
+        xlsx_path = out_root / (Path(cfg["output"]["consolidated_csv"]).stem + ".xlsx")
+        write_workbook(xlsx_path, consolidated, summary_df, cfg, inc_on, _log)
 
     if failures:
         _log(f"\n{len(failures)} image(s) failed:")

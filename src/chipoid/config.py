@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from .inclusion import resolve_thresholds
+
 
 DEFAULTS: dict[str, Any] = {
     "input": {
@@ -111,6 +113,22 @@ DEFAULTS: dict[str, Any] = {
         ],
     },
 
+    # Inclusion step: drop wells whose fluorescence is in the noise on EVERY
+    # marker (a QC proxy for "is there anything in this well", not a cell
+    # detector or live/dead classifier). Off by default = v0.9 behaviour.
+    "inclusion": {
+        "enabled": False,
+        # Which per-marker measurement the thresholds apply to: signal | signal_median
+        "metric": "signal",
+        # A number = same threshold for every marker, or {marker: number} with
+        # an entry for EVERY marker. Raw counts after background subtraction.
+        "min_signal": 50,
+        # Also exclude wells filled in by the lattice (no Hough detection).
+        "exclude_filled": False,
+        # Also exclude wells whose signal disk is clipped by the image edge.
+        "exclude_partial": True,
+    },
+
     "output": {
         "dir": "output",
         # Per-image subdirectory? If true, each image's PNGs/CSV live in output/<image_id>/.
@@ -126,6 +144,9 @@ DEFAULTS: dict[str, Any] = {
         "consolidated_csv": "wells_all.csv",
         # One-row-per-image summary CSV at the batch root.
         "batch_summary_csv": "batch_summary.csv",
+        # Excel workbook next to the consolidated CSV (same stem, .xlsx):
+        # all_wells, included_wells (only if inclusion is on), summary, settings.
+        "xlsx": True,
         # When extract_channels.enabled is true, the split BF + companion TIFFs
         # land in output/<image_id>/ alongside the overlays. Set this to false
         # to delete them after the per-image readout completes (saves disk if
@@ -134,6 +155,8 @@ DEFAULTS: dict[str, Any] = {
     },
 }
 
+
+INCLUSION_METRICS = ("signal", "signal_median")
 
 SUPPORTED_METRICS = {
     "mean", "median", "std", "bg_median", "signal", "signal_median",
@@ -190,3 +213,17 @@ def _validate(cfg: dict[str, Any]) -> None:
                 f"extract_channels.pages is missing entries for marker(s) {missing}; "
                 f"every marker in `markers` needs a page index when extraction is enabled"
             )
+
+    inc = cfg.get("inclusion") or {}
+    if inc.get("enabled"):
+        _validate_inclusion(inc, markers)
+
+
+def _validate_inclusion(inc: dict[str, Any], markers: list[str]) -> None:
+    metric = inc.get("metric")
+    if metric not in INCLUSION_METRICS:
+        raise ValueError(
+            f"config.inclusion.metric must be one of {list(INCLUSION_METRICS)}, got {metric!r}"
+        )
+    # Shared with the pipeline so config and runtime can never disagree.
+    resolve_thresholds(inc, markers)
