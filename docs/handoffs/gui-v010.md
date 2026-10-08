@@ -141,18 +141,31 @@ above.
 
 ## Status
 
-- [ ] Logic + tests
-- [ ] Widgets
-- [ ] Version
-- [ ] Spec
-- [ ] PR open
+- [x] Logic + tests (55 passed; baseline 41, +14 new)
+- [x] Widgets (greying-out of sub-widgets implemented via ttk state)
+- [x] Version (dynamic via `chipoid.__version__`; title is `chipOid v<version>`)
+- [x] Spec
+- [x] PR open
+
+Deviations / notes:
+- No GUI launch: the WSL venv has no `tkinter` (display exists, but Tk is
+  missing), so widget code is only py_compile-checked. Windows smoke test must
+  cover it.
+- `pip show chipoid` reports 0.9.0.dev1, same as before; it now comes from `__init__.py`.
+- Verified a GUI-default config merged on DEFAULTS runs `run_batch_in_memory` on
+  the seeded image (1 ok, 0 failed).
+- Marker-list edits rebuild per-marker threshold entries on each keystroke
+  (same as extract pages); values are keyed by marker name.
 
 ## Notes for the docs pass
 
-<!-- Fill in:
-     - the GUI section's fields and defaults (for README and the user guide);
-     - the smoke-test checks the Windows session should add for the new
-       section. -->
+- GUI section "Well inclusion (exclude empty wells)": Exclude empty wells (on);
+  Same threshold for all markers (on, 50); per-marker thresholds when off;
+  Also exclude lattice-filled wells (off); Also exclude wells clipped by the
+  image edge (on). Output section: Write Excel workbook (on).
+- Windows smoke test: new section renders; editing markers rebuilds per-marker
+  fields; "same for all" toggles them; unchecking Exclude greys the sub-widgets;
+  title shows the version; exe bundles openpyxl.
 
 ## Questions for the coordinator
 

@@ -1,7 +1,7 @@
 """ConfigForm — Tk form that builds every chipOid config option as a widget.
 
 Layout: one `ttk.LabelFrame` per section (Markers, Filename parsing, Extract,
-Detection, Lattice, Readout, Output figures). Each option row is widget +
+Detection, Lattice, Readout, Well inclusion, Output). Each option row is widget +
 small NoteLabel underneath.
 
 For testing, the pure validation/coercion logic lives in
@@ -53,6 +53,11 @@ NOTES: dict[str, str] = {
     "margin": "Pixels to shrink the signal disk inward from the fitted well radius.",
     "annulus_inner": "Background annulus inner offset from r_well (px).",
     "annulus_outer": "Background annulus outer offset from r_well (px). Must exceed inner.",
+    "inclusion_enabled": "A well is excluded only when EVERY marker's background-subtracted signal is below its threshold (in the noise on all channels). Excluded wells stay in wells_all.csv and the all_wells sheet, flagged by the included / exclude_reason columns; the included_wells sheet leaves them out.",
+    "min_signal_same": "Raw intensity after background subtraction, so it depends on exposure and gain. Pick it from the kill control or visibly empty wells and keep it fixed for an experiment. 50 worked on the validation data.",
+    "exclude_filled": "Filled wells are placed from the grid, not seen by the detector.",
+    "exclude_partial": "Wells whose signal disk is truncated by the image edge.",
+    "xlsx": "Sheets: all_wells, included_wells (when exclusion is on), summary, settings.",
     "per_image_subdir": "When on, each image's outputs land in output/<image_id>/. Turn off only for single-image runs.",
     "save_review_figure": "Composite per-image overview PNG: BF + lattice + intensities + scatter.",
     "save_stage_overlays": "Individual stage PNGs: Canny, Hough overlay, lattice overlay, intensity overlays.",
@@ -158,9 +163,38 @@ class ConfigForm:
         )
         self.metrics.pack(fill=tk.X, anchor=tk.W, padx=(20, 0))
 
-        # --- Section: Output figures ------------------------------------ #
-        out = ttk.LabelFrame(parent, text="Output figures", padding=8)
+        # --- Section: Well inclusion ------------------------------------ #
+        inc = ttk.LabelFrame(parent, text="Well inclusion (exclude empty wells)", padding=8)
+        inc.pack(fill=tk.X, pady=4)
+        self.inclusion_enabled = _row(inc, CheckboxOption(inc, "Exclude empty wells", initial_value=True,
+                                                          on_change=self._on_inclusion_toggle),
+                                      NOTES["inclusion_enabled"])
+        self.inclusion_body = ttk.Frame(inc)
+        self.inclusion_body.pack(fill=tk.X, anchor=tk.W, padx=(20, 0))
+        body = self.inclusion_body
+        self.min_signal_same = _row(body, CheckboxOption(body, "Same threshold for all markers", initial_value=True,
+                                                         on_change=self._on_min_signal_same_toggle),
+                                    NOTES["min_signal_same"])
+        # Exactly one of these two frames is packed at a time.
+        self.thresholds_container = ttk.Frame(body)
+        self.thresholds_container.pack(fill=tk.X, anchor=tk.W)
+        self.shared_threshold_frame = ttk.Frame(self.thresholds_container)
+        self.min_signal_all = LabeledEntry(self.shared_threshold_frame, "threshold (signal counts)", "50", width=12)
+        self.min_signal_all.pack(fill=tk.X, anchor=tk.W, pady=(2, 0))
+        self.shared_threshold_frame.pack(fill=tk.X, anchor=tk.W)
+        self.per_marker_frame = ttk.Frame(self.thresholds_container)
+        self.min_signal_entries: dict[str, LabeledEntry] = {}
+        self.exclude_filled = _row(body, CheckboxOption(body, "Also exclude lattice-filled wells", initial_value=False),
+                                   NOTES["exclude_filled"])
+        self.exclude_partial = _row(body, CheckboxOption(body, "Also exclude wells clipped by the image edge", initial_value=True),
+                                    NOTES["exclude_partial"])
+        self._rebuild_min_signal_entries()
+        self.markers.value.trace_add("write", lambda *a: self._rebuild_min_signal_entries())
+
+        # --- Section: Output -------------------------------------------- #
+        out = ttk.LabelFrame(parent, text="Output", padding=8)
         out.pack(fill=tk.X, pady=4)
+        self.xlsx = _row(out, CheckboxOption(out, "Write Excel workbook (wells_all.xlsx)", initial_value=True), NOTES["xlsx"])
         self.per_image_subdir = _row(out, CheckboxOption(out, "Per-image output subdir", initial_value=True), NOTES["per_image_subdir"])
         self.save_review_figure = _row(out, CheckboxOption(out, "Save review composite figure", initial_value=True), NOTES["save_review_figure"])
         self.save_stage_overlays = _row(out, CheckboxOption(out, "Save per-stage overlays", initial_value=True), NOTES["save_stage_overlays"])
@@ -180,6 +214,47 @@ class ConfigForm:
             self.extract_pages_frame.pack(fill=tk.X, anchor=tk.W, padx=(20, 0), pady=(2, 0))
         else:
             self.extract_pages_frame.pack_forget()
+
+    def _marker_names(self) -> list[str]:
+        return logic._split_csv(self.markers.get())
+
+    def _on_inclusion_toggle(self, enabled: bool) -> None:
+        # Grey out the sub-widgets while exclusion is off.
+        def walk(w):
+            for c in w.winfo_children():
+                try:
+                    c.state(["!disabled"] if enabled else ["disabled"])
+                except (AttributeError, tk.TclError):
+                    pass
+                walk(c)
+        walk(self.inclusion_body)
+
+    def _on_min_signal_same_toggle(self, same: bool) -> None:
+        if same:
+            self.per_marker_frame.pack_forget()
+            self.shared_threshold_frame.pack(fill=tk.X, anchor=tk.W)
+        else:
+            # Seed the per-marker fields with the shared value.
+            shared = self.min_signal_all.get()
+            for entry in self.min_signal_entries.values():
+                entry.set(shared)
+            self.shared_threshold_frame.pack_forget()
+            self.per_marker_frame.pack(fill=tk.X, anchor=tk.W)
+
+    def _rebuild_min_signal_entries(self) -> None:
+        # Same approach as _rebuild_extract_pages: keep existing values, new
+        # markers start at the shared value.
+        previous = {m: w.get() for m, w in self.min_signal_entries.items()}
+        for child in self.per_marker_frame.winfo_children():
+            child.destroy()
+        self.min_signal_entries.clear()
+        shared = self.min_signal_all.get()
+        for m in self._marker_names():
+            if m in self.min_signal_entries:
+                continue
+            entry = LabeledEntry(self.per_marker_frame, f"threshold for '{m}'", previous.get(m, shared), width=12)
+            entry.pack(fill=tk.X, anchor=tk.W, pady=2)
+            self.min_signal_entries[m] = entry
 
     def _on_markers_changed(self) -> None:
         # Only rebuild if the extract section is even visible.
@@ -242,6 +317,13 @@ class ConfigForm:
             "save_review_figure": self.save_review_figure.get(),
             "save_stage_overlays": self.save_stage_overlays.get(),
             "save_diagnostics": self.save_diagnostics.get(),
+            "inclusion_enabled": self.inclusion_enabled.get(),
+            "min_signal_same": self.min_signal_same.get(),
+            "min_signal_all": self.min_signal_all.get(),
+            "min_signal": {m: w.get() for m, w in self.min_signal_entries.items()},
+            "exclude_filled": self.exclude_filled.get(),
+            "exclude_partial": self.exclude_partial.get(),
+            "xlsx": self.xlsx.get(),
         }
 
     def parse_filenames_enabled(self) -> bool:
