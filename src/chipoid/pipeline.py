@@ -199,7 +199,9 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
             continue
         img = tifffile.imread(mpath)
         if img.shape != bf.shape:
-            raise SystemExit(
+            # ValueError, not SystemExit: the per-image `except Exception` in
+            # run_batch_in_memory then fails only this image, not the batch.
+            raise ValueError(
                 f"[{image_id}] shape mismatch for marker '{marker}': "
                 f"bf={bf.shape} vs companion={img.shape}"
             )
@@ -242,10 +244,12 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
     scatter_vals = ({m: measurements[m][inc_cfg["metric"]] for m in marker_signals}
                     if inc_on else marker_signals)
 
-    # Diagnostics
+    # Diagnostics. Built from the measurement arrays, not the `wells` columns,
+    # which only exist if `signal` is listed in readout.metrics.
+    signal_df = pd.DataFrame({f"signal_{m}": s for m, s in marker_signals.items()})
     if cfg["output"]["save_diagnostics"] and marker_signals:
         viz.save_histograms(
-            wells,
+            signal_df,
             {m: f"signal_{m}" for m in marker_signals},
             out_dir / "06_histograms.png",
         )
@@ -262,7 +266,7 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
                 )
             else:
                 viz.save_scatter(
-                    wells, f"signal_{m1}", f"signal_{m2}",
+                    signal_df, f"signal_{m1}", f"signal_{m2}",
                     f"{m1} signal", f"{m2} signal",
                     out_dir / "07_scatter.png",
                 )

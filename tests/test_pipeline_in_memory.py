@@ -121,19 +121,43 @@ def test_inclusion_on_columns_summary_workbook(tmp_path):
                for l in logs)
 
 
-def test_inclusion_works_without_signal_in_readout_metrics(tmp_path):
+@pytest.mark.parametrize("inclusion_on", [True, False])
+def test_runs_without_signal_in_readout_metrics(tmp_path, inclusion_on):
+    """Inclusion and the 06/07 diagnostics use the measurement arrays, so
+    neither needs `signal` listed in readout.metrics."""
     cfg = load_config(None)
     cfg["input"]["data_root"] = str(DATA_ROOT)
     cfg["output"]["dir"] = str(tmp_path)
     cfg["readout"]["metrics"] = ["mean"]
-    # (06_histograms reads wells["signal_<m>"], so diagnostics need `signal` listed;
-    # that is independent of inclusion.)
-    cfg["output"]["save_diagnostics"] = False
-    cfg["inclusion"]["enabled"] = True
+    cfg["inclusion"]["enabled"] = inclusion_on
     manifest = pd.DataFrame([{"image_id": "mcf7_media", "source": "mcf7_media.tif"}])
     result = run_batch_in_memory(cfg, manifest, log=lambda m: None)
     assert result["n_failed"] == 0
-    assert "included" in pd.read_csv(tmp_path / "wells_all.csv").columns
+    assert ("included" in pd.read_csv(tmp_path / "wells_all.csv").columns) == inclusion_on
+    assert (tmp_path / "mcf7_media" / "06_histograms.png").exists()
+    assert (tmp_path / "mcf7_media" / "07_scatter.png").exists()
+
+
+def test_shape_mismatch_fails_only_that_image(tmp_path):
+    import shutil
+    import numpy as np
+    import tifffile
+    data = tmp_path / "data"; data.mkdir()
+    for stem in ("good", "bad"):
+        shutil.copy(SEED_BF, data / f"{stem}.tif")
+        shutil.copy(SEED_GREEN, data / f"{stem}_green.tif")
+        shutil.copy(SEED_RED, data / f"{stem}_red.tif")
+    tifffile.imwrite(data / "bad_red.tif", np.zeros((10, 10), dtype=np.uint16))
+    cfg = load_config(None)
+    cfg["input"]["data_root"] = str(data)
+    cfg["output"]["dir"] = str(tmp_path / "out")
+    manifest = pd.DataFrame([{"image_id": "bad", "source": "bad.tif"},
+                             {"image_id": "good", "source": "good.tif"}])
+    logs: list[str] = []
+    result = run_batch_in_memory(cfg, manifest, log=logs.append)
+    assert result["n_failed"] == 1 and result["n_success"] == 1
+    assert any("[bad] shape mismatch for marker 'red'" in l for l in logs)
+    assert set(pd.read_csv(tmp_path / "out" / "wells_all.csv").image_id) == {"good"}
 
 
 def test_missing_companion_fails_image_when_inclusion_on(tmp_path):
