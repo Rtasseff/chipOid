@@ -75,7 +75,7 @@ DEFAULTS: dict[str, Any] = {
         # to count as "detected". Beyond this, the point is marked "filled".
         "snap_tolerance": 30.0,
         # Lattice rotation handling:
-        #   "auto"  -> estimate rotation from data (robust circular median of
+        #   "auto"  -> estimate rotation from data (circular mean of
         #              NN-vector angles)
         #   numeric -> use this rotation in DEGREES (positive = CCW in image
         #              coords). Use 0 to force pure axis-aligned.

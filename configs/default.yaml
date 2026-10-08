@@ -71,7 +71,7 @@ lattice:
   snap_tolerance: 30.0            # max px between grid point and detection for "detected"
 
   # Lattice rotation relative to image axes:
-  #   "auto"  -> estimate from data (robust circular median of NN-vector angles)
+  #   "auto"  -> estimate from data (circular mean of NN-vector angles; refined by the affine refit)
   #   numeric -> use this rotation in DEGREES (positive = CCW). Use 0 to force
   #              pure axis-aligned behavior.
   rotation_deg: auto

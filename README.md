@@ -6,7 +6,7 @@ The problem here is geometric (find wells on a lattice, read fluorescence), not 
 
 ## What chipOid does
 
-For each input image: finds the wells, then measures the fluorescence intensity inside each well. The output is one CSV row per well per image, with intensity statistics per fluorescence channel. That's it — chipOid does not classify wells, does not threshold biology, and does not normalize across images. Those are downstream-analysis decisions, not pipeline steps.
+For each input image: finds the wells, then measures the fluorescence intensity inside each well. The output is one CSV row per well per image, with intensity statistics per fluorescence channel. An optional **inclusion** step flags wells whose fluorescence is in the noise on *every* channel (a well is excluded only when all markers are below their thresholds). That is a noise/occupancy QC, not a cell detector and not a live/dead classifier; excluded wells stay in the outputs, flagged. Beyond that, chipOid does not label wells biologically and does not normalize across images — those are downstream-analysis decisions, not pipeline steps.
 
 ## File conventions ("BF + companion")
 
@@ -43,8 +43,9 @@ The shared `<base>` (here `mcf7_media`) is how chipOid pairs them up. Marker nam
 |---|---|---|
 | 0. (optional) **Extract** | Split a multi-page raw TIFF into BF + one companion per marker | Skipped if your data is already split |
 | 1. **Detect** | Canny → `hough_circle` → peaks; candidate well centers from BF | `skimage.transform.hough_circle` |
-| 2. **Lattice** | Estimate row/column pitch from nearest-neighbor vectors; predict full grid; snap Hough detections; fill misses from lattice | See "Why a lattice" below |
+| 2. **Lattice** | Estimate row/column pitch from nearest-neighbor vectors; predict full grid; snap Hough detections; refit the grid to the snapped detections (least-squares affine) and re-snap; fill misses from lattice. Detected wells keep their exact Hough centre | See "Why a lattice" and "Lattice options" |
 | 3. **Readout** | For each well: signal disk + bg annulus per companion; per-well intensity statistics | See `METRICS.md` |
+| 4. (optional) **Inclusion** | Flag a well as excluded only if every marker's signal is below its threshold (`included`, `exclude_reason` columns) | Off by default for CLI/YAML; see "Inclusion" below |
 
 All stages run inside a single `chipoid run` invocation, driven by a YAML config and a CSV manifest.
 
@@ -56,9 +57,9 @@ This is what makes the pipeline robust to dimmer or noisier images: even if Houg
 
 **The consequence is single-chip-per-image.** chipOid fits ONE lattice per image. If a single image contains two physically separated chips (different lattice origins, or different rotations), the single-lattice fit averages between them, and snapping mislabels which chip each well belongs to. **Split multi-chip images into one chip per image upstream** before running chipOid.
 
-## Desktop GUI (Developer Version v0.9)
+## Desktop GUI
 
-A Tkinter desktop app exposes every pipeline option with inline notes. Two entry points:
+A Tkinter desktop app exposes every pipeline option with inline notes; the window title shows the chipOid version. Two entry points:
 
 ```bash
 # Launch from a Python install:
@@ -76,6 +77,8 @@ filename parsing splits `<base>` on `_` and assigns user-typed labels to
 each chunk, attaching the parsed values as metadata columns on
 `wells_all.csv`.
 
+The **Well inclusion (exclude empty wells)** section controls the inclusion step. It is on by default with one shared threshold of 50; untick "Same threshold for all markers" to set one per marker. The **Output** section has a **Write Excel workbook** checkbox (on by default).
+
 ## Install
 
 ```bash
@@ -90,7 +93,7 @@ pip install -e .
 chipoid run --config configs/default.yaml
 ```
 
-This reads `configs/manifest.csv`, processes every image listed, and writes per-image overlays + CSVs into `output/<image_id>/` plus a consolidated `output/wells_all.csv` and `output/batch_summary.csv`.
+This reads `configs/manifest.csv`, processes every image listed, and writes per-image overlays + CSVs into `output/<image_id>/` plus a consolidated `output/wells_all.csv` (and `wells_all.xlsx`) and `output/batch_summary.csv`.
 
 ## Manifest
 
@@ -117,15 +120,36 @@ Columns:
 - **`lattice.*`** — pitch and rotation estimation, plus row/col trimming. See "Lattice options" below.
 - **`readout.margin / annulus_inner / annulus_outer`** — sampling geometry around each well.
 - **`readout.metrics`** — which per-well columns to write. See `METRICS.md`.
+- **`inclusion.*`** — optional noise/occupancy QC (`enabled`, `metric`, `min_signal`, `exclude_filled`, `exclude_partial`). See "Inclusion" below.
+- **`output.xlsx`** — write `wells_all.xlsx` next to the CSV (default `true`). See "Outputs".
 
 ### Lattice options
 
 The lattice fit estimates row/col pitch from the Hough detections, fits a grid to them, and snaps detections to grid points (filling in any wells Hough missed). Key knobs:
 
-- **`lattice.rotation_deg: auto`** (default). The pipeline estimates lattice rotation from the data via a robust circular-median of nearest-neighbor angles. Override with a numeric value in degrees (e.g. `rotation_deg: 0` to force axis-aligned) if the estimator misbehaves on a difficult image.
+- **`lattice.rotation_deg: auto`** (default). The pipeline estimates lattice rotation from the data via a circular mean of nearest-neighbor angles. Override with a numeric value in degrees (e.g. `rotation_deg: 0` to force axis-aligned) if the estimator misbehaves on a difficult image.
 - **`lattice.min_detected_fraction: 0.25`** (default). After snapping, any row or column where fewer than this fraction of wells are Hough-detected gets dropped. Catches the failure mode where the lattice bbox extends beyond the actual chip and generates rows of all-filled-no-detected wells. Set to `0` to disable.
 - **`lattice.max_rows`** / **`lattice.max_cols`** (default `null`). Optional hard caps applied AFTER the density filter. Use only when you know the chip's true layout — highest-index rows/cols are trimmed first.
 - **`lattice.snap_tolerance: 30.0`** (default). Max pixel distance between a predicted grid point and the nearest Hough detection for the well to be considered "detected" rather than "filled".
+
+**Refit.** The rotation and median-pitch fit only seeds the grid indices. chipOid then fits an affine map from (row, col) to (x, y) to the snapped detections by least squares and re-snaps (up to 3 times, one detection per grid point). This matters when the row spacing alternates (e.g. 148/156 px): a median pitch drifts by tens of pixels over a tall chip, while the affine fit uses the mean period and absorbs slight shear. Detected wells keep their exact Hough `x, y, r`; filled wells sit at the fitted grid position, and `col_pitch` / `row_pitch` report the refit geometry.
+
+**Fit quality.** Each image logs `lattice QC: residual median=… p95=… px (refit iterations N, rescued M)`: the distance from detected wells to their fitted grid positions (also `lattice_resid_median` / `lattice_resid_p95` in `batch_summary.csv`). If the median exceeds 0.25 × `r_well` (the median detected radius), it also logs a `[WARN]`; check `03_lattice_overlay.png`.
+
+### Inclusion (optional)
+
+```yaml
+inclusion:
+  enabled: false        # CLI/YAML default; the GUI turns it on (threshold 50)
+  metric: signal        # signal | signal_median
+  min_signal: 50        # one number for every marker, or {green: 50, red: 50}
+  exclude_filled: false # also exclude lattice-filled wells
+  exclude_partial: true # also exclude wells whose signal disk is clipped by the image edge
+```
+
+A well is kept if **any** marker's `metric` is at or above that marker's threshold, and excluded only when **every** marker is below. A well with strong red and no green (or the reverse) is therefore kept; a well with neither is excluded. This is a noise/occupancy QC, not a cell detector or a live/dead classifier. A `min_signal` mapping needs an entry for every marker. Thresholds are raw counts after background subtraction, so they depend on exposure and gain: pick them per experiment and use one setting for the whole batch.
+
+Excluded wells are not deleted. With inclusion on, `wells.csv` and `wells_all.csv` gain `included` and `exclude_reason` columns (see `METRICS.md`), the overlays draw excluded wells in grey, and the scatter shows the threshold lines. A missing companion then fails that image (the batch continues). With inclusion off, the CSV columns are the same as in v0.9.
 
 ### Detection parameters and bit-depth
 
@@ -143,18 +167,27 @@ output/
 │   ├── 01_canny.png              edge map
 │   ├── 02_hough_overlay.png      detected circles on BF
 │   ├── 03_lattice_overlay.png    BF with detected (lime) + filled (magenta) wells; labeled by well_id
-│   ├── 04_intensity_<marker>.png BF with filled, semi-transparent disks per well, colored by signal
+│   ├── 04_intensity_<marker>.png BF with filled, semi-transparent disks per well, colored by signal (excluded wells grey)
 │   ├── 06_histograms.png         signal distributions per marker (skip via output.save_diagnostics)
-│   ├── 07_scatter.png            marker-A vs marker-B per well (same gate)
+│   ├── 07_scatter.png            marker-A vs marker-B per well (same gate; threshold lines when inclusion is on)
 │   ├── review.png                composite for quick batch review (lattice + each marker + scatter + hist)
 │   ├── hough_centers.csv         raw detections (for debugging)
 │   └── wells.csv                 per-image table
 ├── wells_all.csv                 consolidated batch table (every well, every image)
-├── batch_summary.csv             one row per image: counts, pitches, rotation, signal quantiles
-└── run.log                       full processing log (includes the effective merged config)
+├── wells_all.xlsx                same data as an Excel workbook (output.xlsx; sheets below)
+├── batch_summary.csv             one row per image: counts, pitches, lattice residuals, signal quantiles
+└── run.log                       full processing log (first line carries the chipOid version; includes the effective merged config)
 ```
 
 `wells_all.csv` is the file to point downstream analysis at. See `METRICS.md` for column-by-column definitions.
+
+`wells_all.xlsx` (same stem as `output.consolidated_csv`) has four sheets: `all_wells` (same rows as `wells_all.csv`), `included_wells` (only when inclusion is on: the rows with `included = TRUE`), `summary` (same as `batch_summary.csv`) and `settings` (chipOid version, timestamp and every effective config value, including the input and output paths). Values only, no formulas. If the file is open in Excel when chipOid tries to write it, chipOid logs a `[WARN]` and carries on.
+
+## Further reading
+
+- `METRICS.md` — column definitions for every output file.
+- `docs/LIVE_DEAD_GUIDE.md` — one-page guide for lab users running a green/red live/dead experiment (settings, choosing the inclusion threshold).
+- `docs/RELEASE_NOTES_v0.10.md` — what changed in v0.10.
 
 ## Assumptions / limits (current)
 

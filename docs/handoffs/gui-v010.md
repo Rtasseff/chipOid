@@ -1,3 +1,5 @@
+> **Merged 2026-10-08** (PR #13, squash). Kept as a record.
+
 # Handoff — `feat/gui-v010`
 
 | | |

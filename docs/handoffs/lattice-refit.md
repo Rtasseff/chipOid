@@ -1,3 +1,5 @@
+> **Merged 2026-10-08** (PR #14, squash). Kept as a record.
+
 # Handoff — `fix/lattice-refit`
 
 | | |

@@ -60,6 +60,6 @@ git branch -d <branch> && git worktree prune
 
 | Dir (`202605_chipOid-wt/`) | Branch | Since | Issues | Status |
 |---|---|---|---|---|
-| `lattice-refit/` | `fix/lattice-refit` | 2026-10-08 | #3, #12 (guard) | Active. Opus 5.5 / medium. Merge first. |
-| `inclusion-xlsx/` | `feat/inclusion-xlsx` | 2026-10-08 | #1, #2, #7 (marking) | Active. Sonnet 5.5 / high. Rebase after lattice-refit. |
-| `gui-v010/` | `feat/gui-v010` | 2026-10-08 | #5 (code) | Active. Sonnet 5.5 / medium. Merge last. |
+| `lattice-refit/` | `fix/lattice-refit` | 2026-10-08 | #3, #12 (guard) | Merged 2026-10-08 (PR #14). |
+| `inclusion-xlsx/` | `feat/inclusion-xlsx` | 2026-10-08 | #1, #2, #7 (marking) | Merged 2026-10-08 (PR #15). |
+| `gui-v010/` | `feat/gui-v010` | 2026-10-08 | #5 (code) | Merged 2026-10-08 (PR #13). |
