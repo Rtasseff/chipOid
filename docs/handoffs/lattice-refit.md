@@ -115,12 +115,53 @@ Checks:
 
 ## Status
 
-- [ ] Algorithm implemented
-- [ ] Unit tests
-- [ ] EXP24 acceptance tables
-- [ ] PR open
+- [x] Algorithm implemented
+- [x] Unit tests (`tests/test_lattice.py`, 7 tests; suite 48 passed, baseline 41)
+- [x] EXP24 acceptance tables (in the PR; run `output/v010_validation/lattice_refit`)
+- [x] PR open
+
+Deviations / findings (details in the PR):
+- **Metric changes are wider than predicted.** Exact Hough centres remove the
+  rotate/de-rotate round-off on 15–37 wells per image (not just the 7 TX100
+  wells), changing `signal_*` by ≤ 1.9 counts (not ≤ 0.5). Cause: integer
+  centres + integer radii put rim pixels exactly on the disk boundary, so a
+  1e-14 px shift flips them. Lab Windows outputs carry the same round-off as
+  the Linux baseline, so this is a one-time shift towards exact geometry.
+- **TX100 vs picks at max ≥ 50: 99/100, not 100/100.** The disagreement is
+  r00c02, now read on its real well (was a misplaced filled well); BF shows a
+  spheroid in it, it reads red ≈ 204, and it is not in the 19 picks.
+- **Regression test:** on the synthetic fixture the v0.9 code puts the 3
+  filled wells 10–15 px off (the brief expected > 20 px). The balanced 148/156
+  spacing lets the median land near 153 px rather than 155 as on EXP24. It
+  still fails the < 3 px check, so the test is a valid regression test.
+- **Pre-existing crash fixed in `_renumber_and_label`:** whenever a
+  `max_rows`/`max_cols` cap actually fired, the next renumber re-inserted
+  `well_id` and raised `ValueError`. Needed for the capped-rows log line;
+  `trim_lattice` behaviour is otherwise unchanged. It now also reports
+  `capped_rows_total` / `capped_cols_total` (for "kept 25 of 26").
+- `estimate_pitches` clamps k to the number of points (crashed with < 5
+  detections); NaN pitches (one row/col) borrow the other pitch.
+- `x0`, `y0` in `info` stay the initial working-frame origin (not the refit
+  origin); `n_grid` is the final grid size.
 
 ## Notes for the docs pass
+
+- **Refit (README "Lattice options"):** the rotation + median-pitch fit only
+  seeds grid indices; chipOid then fits an affine map (row, col) → (x, y) by
+  least squares to the snapped detections and re-snaps (≤ 3 iterations, unique
+  one-to-one assignment, then unassigned grid points take an unused detection
+  within `r_well`). This uses the mean row period and absorbs slight shear.
+- **METRICS.md:** `batch_summary.csv` gains `lattice_resid_median`,
+  `lattice_resid_p95` (px, detected wells after trim; NaN if lattice disabled).
+  `run.log` gains `lattice QC: residual median=… p95=… px (refit iterations N,
+  rescued M)`, a `[WARN]` when median > 0.25 × r_well, and `capped rows/cols:
+  kept K of N`. `col_pitch`/`row_pitch`/rotation now report the refit geometry.
+- **dist_to_det:** distance from the refit grid position to the assigned
+  detection (detected wells, i.e. the fit residual) or to the nearest
+  detection (filled wells). Never 0 for filled wells.
+- Detected wells' `x, y, r` are now the exact Hough values (integers in
+  practice); signal disks no longer depend on float round-off.
+- README "circular-median" → circular mean.
 
 <!-- Fill in:
      - how the refit works, in two sentences (README "Lattice options");
@@ -132,7 +173,12 @@ Checks:
 
 ## Questions for the coordinator
 
--
+- TX100 r00c02 (spheroid visible, red ≈ 204) is now kept at T = 50 but is not
+  in the hand-picks. Was it left out because v0.9 read it off-centre? If it
+  should be a pick, the 100/100 criterion holds.
+- With a spurious row at the *top* that the density filter keeps (e.g. a
+  label exactly on a grid point), `max_rows` still cuts the bottom real row
+  (#12 observation). Not changed here; the new log line makes it visible.
 
 ## Return protocol
 
