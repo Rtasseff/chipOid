@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Session | Windows Claude Code session on the main checkout via the WSL share |
-| Build commit | `main` at or after `55d489a` (version `0.10.0`) — see step 1 |
+| Build commit | `main` at or after `9635831` (version `0.10.0`) — see step 1 |
 | Created | 2026-10-08 |
 | Issues | #5 (rebuild + smoke test) |
 | Coordinator session | WSL, `~/projects/miniProjects/202605_chipOid/` |
@@ -23,8 +23,8 @@ to the lab.
 ## Steps
 
 1. **Preflight.**
-   - `git log --oneline -3`: HEAD is `55d489a` or a later docs-only commit.
-   - Confirm the code is the validated code: `git diff --stat 55d489a HEAD -- src chipoid_gui.spec requirements.txt pyproject.toml` prints nothing.
+   - `git log --oneline -3`: HEAD is `9635831` or a later docs-only commit.
+   - Confirm the code is the validated code: `git diff --stat 9635831 HEAD -- src chipoid_gui.spec requirements.txt pyproject.toml` prints nothing. (The Linux reference run was made at `55d489a`; `9635831` differs from it only by a comment in `config.py`.)
    - Record `git status`; noise is expected.
 2. **Build venv.** `.venv-build\Scripts\python -m pip install -r requirements.txt pyinstaller pytest pillow`. Confirm `openpyxl` is now installed (`pip show openpyxl`).
 3. **Unit tests on Windows.** Run `$env:PYTHONPATH = "src"`, then `.venv-build\Scripts\python -m pytest tests -q`.
