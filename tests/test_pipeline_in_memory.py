@@ -68,3 +68,102 @@ def test_run_batch_in_memory_produces_outputs(tmp_path):
     # Log callback was actually exercised
     assert len(log_lines) > 0
     assert any("mcf7_media" in line for line in log_lines)
+
+
+# --------------------------------------------------------------------------- #
+# Inclusion + workbook
+# --------------------------------------------------------------------------- #
+def _run(tmp_path, inclusion=None, **out_over):
+    cfg = load_config(None)
+    cfg["input"]["data_root"] = str(DATA_ROOT)
+    cfg["output"]["dir"] = str(tmp_path)
+    cfg["output"].update(out_over)
+    if inclusion is not None:
+        cfg["inclusion"].update(inclusion)
+    manifest = pd.DataFrame([{"image_id": "mcf7_media", "source": "mcf7_media.tif"}])
+    logs: list[str] = []
+    result = run_batch_in_memory(cfg, manifest, log=logs.append)
+    return result, logs
+
+
+def test_inclusion_off_adds_nothing(tmp_path):
+    from openpyxl import load_workbook
+    result, logs = _run(tmp_path)
+    assert result["n_failed"] == 0
+    df = pd.read_csv(tmp_path / "wells_all.csv")
+    assert "included" not in df.columns and "exclude_reason" not in df.columns
+    assert "n_included" not in pd.read_csv(tmp_path / "batch_summary.csv").columns
+    assert load_workbook(tmp_path / "wells_all.xlsx").sheetnames == [
+        "all_wells", "summary", "settings"]
+    assert logs[0].startswith("chipOid ") and " batch: 1 images" in logs[0]
+    assert "inclusion: off — all wells included" in logs
+    assert not any(l.strip().startswith("inclusion:") and "wells included (" in l for l in logs)
+
+
+def test_inclusion_on_columns_summary_workbook(tmp_path):
+    from openpyxl import load_workbook
+    result, logs = _run(tmp_path, inclusion={"enabled": True,
+                                             "min_signal": {"green": 2500, "red": 600}})
+    assert result["n_failed"] == 0
+    df = pd.read_csv(tmp_path / "wells_all.csv")
+    cols = list(df.columns)
+    assert cols[cols.index("dist_to_det") + 1: cols.index("dist_to_det") + 3] == [
+        "included", "exclude_reason"]
+    summ = pd.read_csv(tmp_path / "batch_summary.csv")
+    n_inc = int(summ["n_included"].iloc[0])
+    assert n_inc == int(df["included"].sum()) and 0 < n_inc < len(df)
+    assert summ["min_signal_green"].iloc[0] == 2500 and summ["min_signal_red"].iloc[0] == 600
+    wb = load_workbook(tmp_path / "wells_all.xlsx")
+    assert wb.sheetnames == ["all_wells", "included_wells", "summary", "settings"]
+    assert pd.read_excel(tmp_path / "wells_all.xlsx", sheet_name="included_wells").shape[0] == n_inc
+    assert any(l.startswith("inclusion: on — ") for l in logs)
+    assert any(l.strip().startswith("inclusion: ") and f"{n_inc}/{len(df)} wells included" in l
+               for l in logs)
+
+
+def test_inclusion_works_without_signal_in_readout_metrics(tmp_path):
+    cfg = load_config(None)
+    cfg["input"]["data_root"] = str(DATA_ROOT)
+    cfg["output"]["dir"] = str(tmp_path)
+    cfg["readout"]["metrics"] = ["mean"]
+    # (06_histograms reads wells["signal_<m>"], so diagnostics need `signal` listed;
+    # that is independent of inclusion.)
+    cfg["output"]["save_diagnostics"] = False
+    cfg["inclusion"]["enabled"] = True
+    manifest = pd.DataFrame([{"image_id": "mcf7_media", "source": "mcf7_media.tif"}])
+    result = run_batch_in_memory(cfg, manifest, log=lambda m: None)
+    assert result["n_failed"] == 0
+    assert "included" in pd.read_csv(tmp_path / "wells_all.csv").columns
+
+
+def test_missing_companion_fails_image_when_inclusion_on(tmp_path):
+    data = tmp_path / "data"; data.mkdir()
+    import shutil
+    shutil.copy(SEED_BF, data / "x.tif"); shutil.copy(SEED_GREEN, data / "x_green.tif")
+    cfg = load_config(None)
+    cfg["input"]["data_root"] = str(data)
+    cfg["output"]["dir"] = str(tmp_path / "out")
+    cfg["inclusion"]["enabled"] = True
+    manifest = pd.DataFrame([{"image_id": "x", "source": "x.tif"}])
+    logs: list[str] = []
+    result = run_batch_in_memory(cfg, manifest, log=logs.append)
+    assert result["n_failed"] == 1 and result["n_success"] == 0
+    assert any("[x] inclusion is enabled but the 'red' companion is missing" in l for l in logs)
+
+
+def test_open_files_warn_and_continue(tmp_path, monkeypatch):
+    """PermissionError on any output write is a warning, never a failed batch."""
+    real_to_csv = pd.DataFrame.to_csv
+
+    def locked(self, path_or_buf=None, *a, **k):
+        if str(path_or_buf).endswith(("wells_all.csv", "batch_summary.csv")):
+            raise PermissionError(13, "Permission denied", str(path_or_buf))
+        return real_to_csv(self, path_or_buf, *a, **k)
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", locked)
+    result, logs = _run(tmp_path)
+    assert result["n_failed"] == 0 and result["n_success"] == 1
+    assert (tmp_path / "mcf7_media" / "wells.csv").exists()
+    assert (tmp_path / "wells_all.xlsx").exists()
+    warns = [l for l in logs if "[WARN] could not write" in l]
+    assert any("wells_all.csv" in l for l in warns) and any("batch_summary.csv" in l for l in warns)
