@@ -1,6 +1,10 @@
 # Branch handoffs
 
-How parallel work runs on this repo. One **coordinator session** sits on `main`
+How parallel work runs on this repo. The full release playbook (roles, steps,
+prompts, lessons) is [../DEV_WORKFLOW.md](../DEV_WORKFLOW.md); this file is the
+worktree and brief conventions.
+
+One **coordinator session** sits on `main`
 in the primary checkout (`~/projects/miniProjects/202605_chipOid/`), plans,
 writes briefs, reviews and merges. Each large chunk of work gets its own branch
 **and its own directory** via `git worktree`, with a fresh agent session in it.
@@ -60,6 +64,18 @@ git branch -d <branch> && git worktree prune
 
 | Dir (`202605_chipOid-wt/`) | Branch | Since | Issues | Status |
 |---|---|---|---|---|
-| `lattice-refit/` | `fix/lattice-refit` | 2026-10-08 | #3, #12 (guard) | Merged 2026-10-08 (PR #14). |
-| `inclusion-xlsx/` | `feat/inclusion-xlsx` | 2026-10-08 | #1, #2, #7 (marking) | Merged 2026-10-08 (PR #15). |
-| `gui-v010/` | `feat/gui-v010` | 2026-10-08 | #5 (code) | Merged 2026-10-08 (PR #13). |
+| — | — | — | — | none active (v0.10 worktrees removed 2026-10-08) |
+
+## Records (merged or done)
+
+| Brief | Kind | Issues | Outcome |
+|---|---|---|---|
+| [lattice-refit.md](lattice-refit.md) | worktree `fix/lattice-refit` | #3, #12 | Merged 2026-10-08 (PR #14) |
+| [inclusion-xlsx.md](inclusion-xlsx.md) | worktree `feat/inclusion-xlsx` | #1, #2, #7 | Merged 2026-10-08 (PR #15) |
+| [gui-v010.md](gui-v010.md) | worktree `feat/gui-v010` | #5 | Merged 2026-10-08 (PR #13) |
+| [windows-build-v0.10.md](windows-build-v0.10.md) | Windows session | #5 | Build passed; found #17, #18 |
+| [windows-rebuild-v0.10.x.md](windows-rebuild-v0.10.x.md) | Windows session | #5, #17, #18 | Passed; `v0.10.0` tagged on `c902446` |
+
+For the next Windows build, copy `windows-rebuild-v0.10.x.md` as the starting
+brief. It has every step, including the integration-test junction and the
+checks that need an unlocked PC.

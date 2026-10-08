@@ -49,7 +49,8 @@ are its context.
 
 ## Rules for the Windows session (agent)
 
-- **Git is read-only.** `git log` and `git status` are fine. Never commit, push, checkout, stash, reset, rebase or `git add`. Git for Windows on a WSL repo may report every file as modified (file mode or line-ending noise); ignore it and don't "fix" it.
+- **Git is read-only.** Run it through WSL, e.g. `wsl.exe git -C ~/projects/miniProjects/202605_chipOid log --oneline -3`. That avoids the noise Git for Windows produces on a WSL repo, where it can report every file as modified (file mode or line endings). `log`, `status` and `diff` are fine. Never commit, push, checkout, stash, reset, rebase or `git add`.
+- **Locked vs unlocked PC.** On a locked PC the GUI can only be driven by keyboard (Tk ignores posted mouse clicks, and there is no screen capture beyond `PrintWindow`). Mouse-wheel, scroll-bar and visual checks need the human to keep the PC unlocked. Each brief marks those steps.
 - **May write:**
   - the **Report** section of its brief (keep LF line endings if your editor allows);
   - PyInstaller output under `D:\projects\chipOid\{dist,build}\`;
@@ -63,15 +64,24 @@ are its context.
 The brief for each build says which commit, which checks, and the expected
 numbers. The usual steps:
 
-1. **Preflight.** `git log --oneline -1` shows the commit named in the brief. Note `git status` (expect noise, not real changes).
+1. **Preflight** (git via `wsl.exe`, see the rules):
+   - `git log --oneline -3` shows the commit named in the brief, or a later docs-only commit.
+   - `git diff --stat <commit> HEAD -- src chipoid_gui.spec requirements.txt pyproject.toml` prints nothing.
 2. **Update the build venv:**
    ```powershell
-   .venv-build\Scripts\python -m pip install -r requirements.txt pyinstaller pytest
+   .venv-build\Scripts\python -m pip install -r requirements.txt pyinstaller pytest pillow
    ```
 3. **Unit tests on Windows** (catch path and encoding bugs before building):
    ```powershell
    $env:PYTHONPATH = "src"
    .venv-build\Scripts\python -m pytest tests -q
+   ```
+   The 8 tests in `test_pipeline_in_memory.py` skip here, because the `data\` symlink doesn't resolve from Windows. To run them, use a scratch folder where `data` is a junction:
+   ```powershell
+   cd C:\Users\<you>\chipoid_smoke\pytest_cwd          # create it if needed
+   cmd /c mklink /J data D:\projects\chipOid\data      # once
+   $env:PYTHONPATH = "<repo>\src"
+   <repo>\.venv-build\Scripts\python -m pytest <repo>\tests\test_pipeline_in_memory.py -q
    ```
 4. **Build** (~11 min over the WSL share):
    ```powershell
@@ -85,10 +95,10 @@ numbers. The usual steps:
    ```powershell
    .venv-build\Scripts\python scripts\validate_exp.py --run <windows output> --baseline <linux output>
    ```
-   Expect zero differences, or float round-off only.
-7. **Package** for handover: copy `D:\projects\chipOid\dist\chipOid.exe` to `D:\projects\chipOid\dist\chipOid_v<version>.exe`, plus any files the brief lists (release notes, user guide).
-8. **Report** in the brief:
-   - commit built, Python and PyInstaller versions, `.exe` size;
+   Expect **zero** differences. Since v0.10, Linux and Windows give identical numbers, so any difference is a bug to report.
+7. **Package** for handover: copy `D:\projects\chipOid\dist\chipOid.exe` to `D:\projects\chipOid\dist\chipOid_v<version>.exe`, overwriting any earlier build of that version so nothing stale is left. Add any files the brief lists (release notes, user guide). Record the SHA-256; the coordinator puts it in the release tag.
+8. **Report** in the brief (write paths as `C:\Users\<you>\…`, never the real user name):
+   - commit built, Python and PyInstaller versions, `.exe` size and SHA-256;
    - the test-suite result;
    - a pass/fail checklist for every smoke test;
    - the validation tables;

@@ -188,6 +188,7 @@ output/
 - `METRICS.md` — column definitions for every output file.
 - `docs/LIVE_DEAD_GUIDE.md` — one-page guide for lab users running a green/red live/dead experiment (settings, choosing the inclusion threshold).
 - `docs/RELEASE_NOTES_v0.10.md` — what changed in v0.10.
+- `docs/DEV_WORKFLOW.md` — for contributors: how releases are planned, built (incl. the Windows `.exe`) and shipped.
 
 ## Assumptions / limits (current)
 

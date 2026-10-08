@@ -20,9 +20,24 @@ The deliverable is per-well intensity statistics in a CSV (plus an Excel workboo
 
 Code on SSD (tracked in git). `data/` and `output/` are symlinks to `/mnt/d/projects/chipOid/` (D drive, not backed up). See `LOCAL_SETUP.md`.
 
-## Worktrees, handoffs and the Windows session
+## Current state (update at the end of every release)
 
-The v0.10 plan lives in GitHub issues (Rtasseff/chipOid, milestone `v0.10`). Large chunks of work run on their own branch in a sibling worktree under `~/projects/miniProjects/202605_chipOid-wt/<slug>/`, each with a fresh session. **If this checkout is a worktree, read `docs/handoffs/<slug>.md` first**: it is the branch's brief. Conventions: `docs/handoffs/README.md`. Validation against real data: `scripts/validate_exp.py` (paths in `LOCAL_SETUP.md`). Windows-only steps (building the `.exe`) run in a Windows session on this folder that reports back and never commits.
+- **Latest release: v0.10.0**, shipped 2026-10-08.
+  - The annotated tag `v0.10.0` is on `c902446`, the commit the Windows `.exe` was built from; its message has the `.exe`'s SHA-256.
+  - The maintainer hands the `.exe` to the lab directly, with `docs/RELEASE_NOTES_v0.10.md` and `docs/LIVE_DEAD_GUIDE.md`. There is no GitHub Release asset.
+- **Open work** (GitHub issues are the source of truth; run `gh issue list`):
+  - #16 is next. It waits on EXP22/EXP26 data from the lab. It also holds the open questions for the lab: TX100 well r00c02, the Media selection, and the EXP22 "15 µM NCs" slide.
+  - Backlog: #7 (colour scales etc.), #8 (needs a decision), #9–#12.
+  - No active milestone, worktrees or branches.
+- **Validation reference:** `output/v010_validation/rc_linux` is the v0.10.0 run on EXP24. The Windows `.exe` matches it exactly. Paths are in `LOCAL_SETUP.md`.
+
+## How we work
+
+Read **`docs/DEV_WORKFLOW.md`** before starting a release. It is the playbook: coordinator session + worktree branches with briefs + a Windows build session, the release cycle step by step, paste-in prompts, and the lessons learned.
+
+- **Worktrees:** large chunks run on their own branch in a sibling worktree, `~/projects/miniProjects/202605_chipOid-wt/<slug>/`. **If this checkout is a worktree, read `docs/handoffs/<slug>.md` first**: it is the branch's brief. Conventions: `docs/handoffs/README.md`.
+- **Validation:** check against real data with `scripts/validate_exp.py`.
+- **Windows-only steps** (building the `.exe`) run in a Windows session on this folder. It reports back and never commits (`docs/WINDOWS_SESSION.md`).
 
 ## BF + companion convention
 
