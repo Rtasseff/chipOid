@@ -255,6 +255,8 @@ class ConfigForm:
             entry = LabeledEntry(self.per_marker_frame, f"threshold for '{m}'", previous.get(m, shared), width=12)
             entry.pack(fill=tk.X, anchor=tk.W, pady=2)
             self.min_signal_entries[m] = entry
+        # New fields take the section's enabled/disabled state.
+        self._on_inclusion_toggle(self.inclusion_enabled.get())
 
     def _on_markers_changed(self) -> None:
         # Only rebuild if the extract section is even visible.

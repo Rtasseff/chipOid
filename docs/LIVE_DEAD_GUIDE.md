@@ -22,7 +22,7 @@ so keep them consistent.
 
 - **Extract channels:** on for the microscope's multi-page TIFFs; pages are brightfield 0, green 1, red 2.
 - **Detection / Lattice:** as before (radius 35–50, and `max_rows 25`, `max_cols 4` for these chips).
-- **Well inclusion (new):** on by default, threshold 50 for every marker. See below.
+- **Well inclusion (new):** on by default, threshold 50 for every marker. See below. If you set a separate threshold per marker, editing or adding a marker name keeps those values, but clearing the whole markers field and retyping it resets them to the shared value.
 - **Write Excel workbook:** on.
 
 ## 3. Empty wells and the threshold

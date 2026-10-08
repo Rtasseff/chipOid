@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")  # files only; never an interactive backend (TkAgg breaks off the main thread on Windows)
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as mpe
 import matplotlib.pyplot as plt

@@ -73,7 +73,7 @@ numbers. The usual steps:
    $env:PYTHONPATH = "src"
    .venv-build\Scripts\python -m pytest tests -q
    ```
-4. **Build** (2–4 min):
+4. **Build** (~11 min over the WSL share):
    ```powershell
    .venv-build\Scripts\python -m PyInstaller --clean --noconfirm `
      --distpath D:\projects\chipOid\dist `

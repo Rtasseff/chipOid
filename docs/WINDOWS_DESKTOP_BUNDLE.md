@@ -84,7 +84,8 @@ python -m PyInstaller --clean --noconfirm `
 # the project-root symlink.
 ```
 
-The build takes 2–4 minutes on a modern laptop. Final exe size is around
+The build takes 2–4 minutes from a native Windows path, and about 10–12
+minutes over the WSL share (11.4 min for v0.10.0). Final exe size is around
 200 MB (matplotlib + scikit-image + scipy dominate).
 
 ## Smoke tests on the built .exe
