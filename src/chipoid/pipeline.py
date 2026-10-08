@@ -134,10 +134,22 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
             f"rotation={lat_info['rotation_deg']:+.3f}° ({lat_info['rotation_source']}), "
             f"{lat_info['n_detected']} detected + {lat_info['n_filled']} filled "
             f"(trimmed {lat_info['n_trimmed']} from {lat_info['n_before_trim']})")
+        log(f"  lattice QC: residual median={lat_info['resid_median']:.1f} "
+            f"p95={lat_info['resid_p95']:.1f} px "
+            f"(refit iterations {lat_info['refit_iterations']}, "
+            f"rescued {lat_info['n_rescued']})")
+        r_med = float(lat_info["default_r"])
+        if lat_info["resid_median"] > 0.25 * r_med:
+            log(f"  [WARN] lattice residual median {lat_info['resid_median']:.1f} px "
+                f"> 0.25 × r_well ({0.25 * r_med:.1f} px); check 03_lattice_overlay.png")
         if lat_info.get("trimmed_rows"):
             log(f"    dropped rows: {lat_info['trimmed_rows']}")
         if lat_info.get("trimmed_cols"):
             log(f"    dropped cols: {lat_info['trimmed_cols']}")
+        for axis in ("rows", "cols"):
+            if f"capped_{axis}_kept" in lat_info:
+                log(f"    capped {axis}: kept {len(lat_info[f'capped_{axis}_kept'])} "
+                    f"of {lat_info[f'capped_{axis}_total']}")
         if cfg["output"]["save_stage_overlays"]:
             viz.save_lattice_overlay(bf, wells, out_dir / "03_lattice_overlay.png", lat_info)
     else:
@@ -240,6 +252,8 @@ def process_image(row: pd.Series, cfg: dict, data_root: Path, out_root: Path,
         "n_filled": int(lat_info["n_filled"]),
         "col_pitch": lat_info["col_pitch"],
         "row_pitch": lat_info["row_pitch"],
+        "lattice_resid_median": lat_info.get("resid_median", float("nan")),
+        "lattice_resid_p95": lat_info.get("resid_p95", float("nan")),
         "median_radius": r_well,
     }
     for marker, sig in marker_signals.items():
