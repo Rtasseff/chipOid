@@ -1,15 +1,20 @@
 # Building the chipOid Windows Desktop App
 
-This document describes how to build `chipOid.exe` — the **Developer Version
-v0.9** GUI — into a single-file, self-contained Windows executable using
-PyInstaller. Modelled on SegOid's `docs/WINDOWS_DESKTOP_BUNDLE.md`.
+This document describes how to build `chipOid.exe`, the chipOid GUI, into a
+single-file, self-contained Windows executable using PyInstaller. Modelled on
+SegOid's `docs/WINDOWS_DESKTOP_BUNDLE.md`.
+
+On this machine the build runs in a Windows Claude Code session on the WSL
+folder, which reports back and never commits. See
+[WINDOWS_SESSION.md](WINDOWS_SESSION.md) for that workflow; this file is the
+build procedure itself.
 
 ## What you get
 
 - A single `dist/chipOid.exe` (~200–250 MB) you can copy to any Windows 10/11
   machine and double-click. No Python install required on the target system.
 - Bundles every chipOid runtime dependency (numpy, scipy, scikit-image,
-  tifffile, imagecodecs, matplotlib, pandas, PIL, pyyaml) plus Tkinter.
+  tifffile, imagecodecs, matplotlib, pandas, openpyxl, PIL, pyyaml) plus Tkinter.
 - Bundles **no model**: chipOid is classical CV, nothing to ship beyond code.
 
 ## Prerequisites (on the build machine)
@@ -49,7 +54,9 @@ python -m venv .venv-build
 # (\\wsl.localhost\... or \\wsl$\...) because pip can't replace its own
 # running executable. Just skip this line if 26.0.1+ is already installed.
 python -m pip install --upgrade pip
-pip install numpy scipy scikit-image tifffile imagecodecs pandas matplotlib pillow pyyaml pyinstaller
+# Runtime deps come from requirements.txt so new ones (e.g. openpyxl in v0.10)
+# are picked up automatically. Re-run this before every build.
+python -m pip install -r requirements.txt pyinstaller pillow
 
 # 3) Build the .exe. --clean discards any stale PyInstaller caches.
 #
@@ -85,22 +92,38 @@ The build takes 2–4 minutes on a modern laptop. Final exe size is around
 After the build, run these checks before declaring victory:
 
 1. **Launch from File Explorer.** Double-click `dist\chipOid.exe`. The window
-   should appear within ~5 seconds with the title **"chipOid — Developer
-   Version v0.9"**.
-2. **Scroll through every section.** Confirm the form is scrollable
-   (mouse-wheel and scroll-bar both work) and that all sections render —
-   Markers + Filename parsing, Extract channels, Detection, Lattice,
-   Readout, Output figures.
-3. **Run on a small test folder.** Copy 2–3 brightfield TIFFs (with
-   companions) to a temp folder, pick that as Input, pick a fresh empty
-   folder as Output, click Run. Confirm the log streams in real time and
-   that `wells_all.csv`, `batch_summary.csv`, and per-image `<image_id>/`
-   subdirectories appear in the output folder.
-4. **Filename parsing.** Enable "Parse filenames into metadata fields", type
-   a label list (e.g. `cell, cond, date`), Run. Confirm the resulting
+   should appear within ~5 seconds, titled **"chipOid v<version>"** with the
+   version from `src/chipoid/__init__.py`.
+2. **Scroll through every section.** Confirm the form scrolls (mouse wheel
+   and scroll bar both work) and that every section renders: Markers +
+   Filename parsing, Extract channels, Detection, Lattice, Readout, Well
+   inclusion, Output.
+3. **Well inclusion defaults.** "Exclude empty wells" is on, "Same threshold
+   for all markers" is on with 50, "exclude filled" is off, and "exclude
+   clipped" is on. Untick "same for all" and confirm one threshold field
+   appears per marker. Edit the markers field and confirm the per-marker
+   fields follow.
+4. **Run on a small test folder.** Copy 1–3 test images to a temp folder,
+   pick it as Input, pick a fresh empty folder as Output, and click Run.
+   Confirm the log streams in real time and that the output folder has
+   `wells_all.csv`, `batch_summary.csv`, `wells_all.xlsx`, `run.log` and one
+   `<image_id>/` subdirectory per image.
+5. **Workbook.** Open `wells_all.xlsx` in Excel. It has the sheets
+   `all_wells`, `included_wells`, `summary` and `settings`. `included_wells`
+   has fewer rows than `all_wells` on images with empty wells, and `settings`
+   shows the chipOid version. This proves openpyxl was bundled.
+6. **Excluded wells in the figures.** In `review.png` and
+   `04_intensity_<marker>.png`, excluded wells are grey. `07_scatter.png`
+   shows dashed threshold lines.
+7. **File open in Excel.** Leave `wells_all.xlsx` (and `wells_all.csv`) open
+   in Excel and Run again into the same Output folder. The run finishes, the
+   log shows `[WARN] could not write ... (is it open in Excel?)`, and the
+   files that weren't open are rewritten.
+8. **Filename parsing.** Enable "Parse filenames into metadata fields", type
+   a label list (e.g. `cell, cond, date`), and Run. Confirm the resulting
    `wells_all.csv` has those columns populated.
-5. **Bad input handling.** Point Input at an empty folder → friendly error
-   dialog before the job starts.
+9. **Bad input handling.** Point Input at an empty folder: a friendly error
+   dialog appears before the job starts.
 
 If any of these fail, see Troubleshooting below.
 
@@ -151,10 +174,10 @@ the symlink layer.
 Verify the missing module is installed in the build venv (`pip list | findstr X`)
 before re-running PyInstaller.
 
-## Known limitations (v0.9)
+## Known limitations
 
 - **No Cancel button mid-run.** Closing the window kills the daemon thread,
-  but there's no graceful in-job cancel. Planned for v0.10.
+  but there's no graceful in-job cancel. Not scheduled yet.
 - **No application icon.** The exe uses Python's generic icon. To customise,
   drop a 256×256 `.ico` file at `assets/chipoid.ico` and rebuild — the spec
   picks it up automatically.
@@ -163,10 +186,15 @@ before re-running PyInstaller.
 
 ## Updating the build
 
-Whenever you change Python code under `src/`, rebuild with the same command:
+Whenever you change Python code under `src/`, re-run the dependency install
+(step 2) and rebuild with the same command as step 3:
 
 ```powershell
-python -m PyInstaller --clean --noconfirm chipoid_gui.spec
+python -m pip install -r requirements.txt pyinstaller pillow
+python -m PyInstaller --clean --noconfirm `
+  --distpath D:\projects\chipOid\dist `
+  --workpath D:\projects\chipOid\build `
+  chipoid_gui.spec
 ```
 
 `--clean` is important: PyInstaller caches dependency analysis aggressively
