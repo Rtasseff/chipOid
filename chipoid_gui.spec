@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# PyInstaller spec for chipOid Developer Version v0.9 GUI.
+# PyInstaller spec for the chipOid Developer Version GUI.
 # Build (from a Windows shell with Python + PyInstaller installed):
 #     python -m PyInstaller --clean --noconfirm chipoid_gui.spec
 #
@@ -27,6 +27,7 @@ tifffile_d,    tifffile_b,    tifffile_h    = collect_all('tifffile')
 matplotlib_d,  matplotlib_b,  matplotlib_h  = collect_all('matplotlib')
 pil_d,         pil_b,         pil_h         = collect_all('PIL')
 yaml_d,        yaml_b,        yaml_h        = collect_all('yaml')
+openpyxl_d,    openpyxl_b,    openpyxl_h    = collect_all('openpyxl')
 
 project_root = Path(SPECPATH)
 
@@ -41,11 +42,11 @@ a = Analysis(
     binaries=(
         pandas_b + scipy_b + skimage_b
         + imagecodecs_b + imagecodecs_dyn
-        + tifffile_b + matplotlib_b + pil_b + yaml_b
+        + tifffile_b + matplotlib_b + pil_b + yaml_b + openpyxl_b
     ),
     datas=(
         datas + pandas_d + scipy_d + skimage_d
-        + imagecodecs_d + tifffile_d + matplotlib_d + pil_d + yaml_d
+        + imagecodecs_d + tifffile_d + matplotlib_d + pil_d + yaml_d + openpyxl_d
     ),
     hiddenimports=[
         # PIL (used transitively by matplotlib for raster writes).
@@ -66,18 +67,21 @@ a = Analysis(
         'pandas', 'pandas._libs', 'pandas._libs.tslibs',
         # yaml: pure python but pyinstaller occasionally misses the loader.
         'yaml',
+        # openpyxl writes the Excel workbook (chipoid.export).
+        'openpyxl',
         # Tkinter — stdlib, but PyInstaller likes explicit hints.
         'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
         # chipOid package + every submodule. Listing them avoids surprises.
         'chipoid', 'chipoid.cli', 'chipoid.config', 'chipoid.detect',
         'chipoid.extract', 'chipoid.lattice', 'chipoid.manifest',
         'chipoid.pipeline', 'chipoid.readout', 'chipoid.viz',
+        'chipoid.inclusion', 'chipoid.export',
         'chipoid.gui', 'chipoid.gui.app', 'chipoid.gui.widgets',
         'chipoid.gui.config_form', 'chipoid.gui.config_form_logic',
         'chipoid.gui.manifest_builder', 'chipoid.gui.filename_schema',
         'chipoid.gui.jobs', 'chipoid.gui.logging_handler',
     ] + pandas_h + scipy_h + skimage_h + imagecodecs_h
-      + tifffile_h + matplotlib_h + pil_h + yaml_h,
+      + tifffile_h + matplotlib_h + pil_h + yaml_h + openpyxl_h,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

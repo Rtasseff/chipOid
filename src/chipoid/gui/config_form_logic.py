@@ -77,6 +77,38 @@ def _rotation_deg(value: str) -> str | float:
     return _to_float(value, "lattice.rotation_deg")
 
 
+DEFAULT_MIN_SIGNAL = 50.0
+
+
+def _coerce_min_signal(raw: dict[str, Any], markers: list[str], enabled: bool) -> dict[str, float]:
+    """Per-marker inclusion thresholds -> {marker: float}, one entry per marker.
+
+    Enabled: every threshold must parse as a float >= 0 (error names the field).
+    Disabled: not validated; invalid/blank values fall back to 50.0 so turning
+    exclusion back on is painless.
+    """
+    same = bool(raw.get("min_signal_same", True))
+    per_marker = raw.get("min_signal", {}) or {}
+    out: dict[str, float] = {}
+    for m in markers:
+        if same:
+            value, label = raw.get("min_signal_all", DEFAULT_MIN_SIGNAL), "inclusion threshold (all markers)"
+        else:
+            value, label = per_marker.get(m, ""), f"inclusion threshold for '{m}'"
+        try:
+            if value is None or not str(value).strip():
+                raise ConfigFormError(f"{label} must be a number >= 0; got a blank value")
+            x = _to_float(value, label)
+            if not x >= 0:  # also rejects NaN
+                raise ConfigFormError(f"{label} must be >= 0; got {value!r}")
+            out[m] = x
+        except ConfigFormError:
+            if enabled:
+                raise
+            out[m] = DEFAULT_MIN_SIGNAL
+    return out
+
+
 def coerce_raw_values(raw: dict[str, Any]) -> dict[str, Any]:
     """Build a chipOid config dict from form widget values.
 
@@ -109,6 +141,9 @@ def coerce_raw_values(raw: dict[str, Any]) -> dict[str, Any]:
         ch: _to_int(v, f"extract_channels.pages.{ch}")
         for ch, v in extract_pages_raw.items()
     }
+
+    inclusion_enabled = bool(raw.get("inclusion_enabled", True))
+    min_signal = _coerce_min_signal(raw, markers, inclusion_enabled)
 
     return {
         "input": {
@@ -147,6 +182,13 @@ def coerce_raw_values(raw: dict[str, Any]) -> dict[str, Any]:
             "annulus_outer": _to_float(raw.get("annulus_outer", "20.0"), "annulus_outer"),
             "metrics": metrics,
         },
+        "inclusion": {
+            "enabled": inclusion_enabled,
+            "metric": "signal",
+            "min_signal": min_signal,
+            "exclude_filled": bool(raw.get("exclude_filled", False)),
+            "exclude_partial": bool(raw.get("exclude_partial", True)),
+        },
         "output": {
             "dir": raw.get("output_dir", "output"),
             "per_image_subdir": bool(raw.get("per_image_subdir", True)),
@@ -156,6 +198,7 @@ def coerce_raw_values(raw: dict[str, Any]) -> dict[str, Any]:
             "consolidated_csv": raw.get("consolidated_csv", "wells_all.csv"),
             "batch_summary_csv": raw.get("batch_summary_csv", "batch_summary.csv"),
             "keep_extracted": bool(raw.get("keep_extracted", True)),
+            "xlsx": bool(raw.get("xlsx", True)),
         },
     }
 

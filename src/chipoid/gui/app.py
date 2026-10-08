@@ -1,4 +1,4 @@
-"""chipOid main GUI window — Developer Version v0.9.
+"""chipOid main GUI window (Developer Version).
 
 Architecture mirrors SegOid's `src/gui/app.py`:
   - tk.Tk root with a top title, scrollable Canvas+Frame for the config form,
@@ -8,7 +8,7 @@ Architecture mirrors SegOid's `src/gui/app.py`:
     flow through `logging_handler.GUILogHandler` (queue + after-poll) so Tk
     is only ever touched on the main thread.
 
-v0.9 calls out the developer status prominently in the window title and a
+The developer build calls out the developer status prominently in the window title and a
 header label.
 """
 from __future__ import annotations
@@ -19,6 +19,7 @@ from copy import deepcopy
 from pathlib import Path
 from tkinter import ttk
 
+import chipoid
 from chipoid.config import DEFAULTS, _deep_merge
 from chipoid.manifest import validate_manifest
 
@@ -30,7 +31,7 @@ from .manifest_builder import scan_folder_for_images
 from .widgets import FolderPicker, ScrolledText
 
 
-APP_TITLE = "chipOid — Developer Version v0.9"
+APP_TITLE = f"chipOid v{chipoid.__version__}"
 
 
 class ChipOidApp:

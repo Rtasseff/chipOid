@@ -41,6 +41,13 @@ def _default_raw() -> dict:
         "save_review_figure": True,
         "save_stage_overlays": True,
         "save_diagnostics": True,
+        "inclusion_enabled": True,
+        "min_signal_same": True,
+        "min_signal_all": "50",
+        "min_signal": {},
+        "exclude_filled": False,
+        "exclude_partial": True,
+        "xlsx": True,
     }
 
 
@@ -142,3 +149,79 @@ def test_extract_pages_parsed_as_ints():
     assert cfg["input"]["extract_channels"]["pages"] == {
         "brightfield": 0, "green": 1, "red": 2,
     }
+
+
+# --- inclusion / xlsx -------------------------------------------------------
+
+def test_inclusion_defaults():
+    cfg = coerce_raw_values(_default_raw())
+    assert cfg["inclusion"] == {
+        "enabled": True,
+        "metric": "signal",
+        "min_signal": {"green": 50.0, "red": 50.0},
+        "exclude_filled": False,
+        "exclude_partial": True,
+    }
+    assert cfg["output"]["xlsx"] is True
+
+
+def test_same_for_all_fills_every_marker():
+    raw = _default_raw()
+    raw.update(markers="a, b, c", min_signal_all="12.5")
+    assert coerce_raw_values(raw)["inclusion"]["min_signal"] == {"a": 12.5, "b": 12.5, "c": 12.5}
+
+
+def test_per_marker_values_pass_through():
+    raw = _default_raw()
+    raw.update(min_signal_same=False, min_signal={"green": "10", "red": "200.5"})
+    assert coerce_raw_values(raw)["inclusion"]["min_signal"] == {"green": 10.0, "red": 200.5}
+
+
+def test_renamed_markers_get_matching_keys():
+    raw = _default_raw()
+    raw.update(markers="calcein, pi", min_signal_same=False,
+               min_signal={"calcein": "5", "pi": "7", "stale": "1"})
+    assert coerce_raw_values(raw)["inclusion"]["min_signal"] == {"calcein": 5.0, "pi": 7.0}
+
+
+@pytest.mark.parametrize("bad", ["", "  ", "-1", "abc"])
+def test_bad_shared_threshold_raises_when_enabled(bad):
+    raw = _default_raw()
+    raw["min_signal_all"] = bad
+    with pytest.raises(ConfigFormError, match="threshold"):
+        coerce_raw_values(raw)
+
+
+@pytest.mark.parametrize("bad", ["", "-1", "abc"])
+def test_bad_per_marker_threshold_names_marker(bad):
+    raw = _default_raw()
+    raw.update(min_signal_same=False, min_signal={"green": "10", "red": bad})
+    with pytest.raises(ConfigFormError, match="'red'"):
+        coerce_raw_values(raw)
+
+
+def test_missing_per_marker_entry_raises_when_enabled():
+    raw = _default_raw()
+    raw.update(min_signal_same=False, min_signal={"green": "10"})
+    with pytest.raises(ConfigFormError, match="'red'"):
+        coerce_raw_values(raw)
+
+
+def test_bad_thresholds_tolerated_when_disabled():
+    raw = _default_raw()
+    raw.update(inclusion_enabled=False, min_signal_same=False,
+               min_signal={"green": "abc", "red": "20"})
+    cfg = coerce_raw_values(raw)
+    assert cfg["inclusion"]["enabled"] is False
+    assert cfg["inclusion"]["min_signal"] == {"green": 50.0, "red": 20.0}
+    raw.update(min_signal_same=True, min_signal_all="-3")
+    assert coerce_raw_values(raw)["inclusion"]["min_signal"] == {"green": 50.0, "red": 50.0}
+
+
+def test_flags_and_xlsx_pass_through():
+    raw = _default_raw()
+    raw.update(exclude_filled=True, exclude_partial=False, xlsx=False)
+    cfg = coerce_raw_values(raw)
+    assert cfg["inclusion"]["exclude_filled"] is True
+    assert cfg["inclusion"]["exclude_partial"] is False
+    assert cfg["output"]["xlsx"] is False
