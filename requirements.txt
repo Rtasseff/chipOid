@@ -6,3 +6,4 @@ imagecodecs>=2023.0
 pandas>=2.0
 matplotlib>=3.7
 pyyaml>=6.0
+openpyxl>=3.1

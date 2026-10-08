@@ -13,12 +13,16 @@ The deliverable is per-well intensity statistics in a CSV — chipOid does not c
 - Installed in editable mode: `pip install -e .`
 - CLI entry point: `chipoid` (subcommands: `run`, `extract`)
 - GUI entry point: `chipoid-gui` or `python -m chipoid.gui` (Tkinter; Developer Version v0.9)
-- Tests: `pytest tests/` (41 tests, all green)
-- Dependencies: numpy, scipy, scikit-image, tifffile, pandas, matplotlib, pyyaml
+- Tests: `pytest tests/` (41 tests at v0.9, all green)
+- Dependencies: numpy, scipy, scikit-image, tifffile, pandas, matplotlib, pyyaml, openpyxl
 
 ## Storage (this machine)
 
 Code on SSD (tracked in git). `data/` and `output/` are symlinks to `/mnt/d/projects/chipOid/` (D drive, not backed up). See `LOCAL_SETUP.md`.
+
+## Worktrees, handoffs and the Windows session
+
+The v0.10 plan lives in GitHub issues (Rtasseff/chipOid, milestone `v0.10`). Large chunks of work run on their own branch in a sibling worktree under `~/projects/miniProjects/202605_chipOid-wt/<slug>/`, each with a fresh session. **If this checkout is a worktree, read `docs/handoffs/<slug>.md` first**: it is the branch's brief. Conventions: `docs/handoffs/README.md`. Validation against real data: `scripts/validate_exp.py` (paths in `LOCAL_SETUP.md`). Windows-only steps (building the `.exe`) run in a Windows session on this folder that reports back and never commits.
 
 ## BF + companion convention
 

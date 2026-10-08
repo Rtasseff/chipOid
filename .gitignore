@@ -49,3 +49,5 @@ inference/
 *.log
 scratch/
 
+# Local planning notes / throwaway checks (not for the public repo)
+/chipOid_issues*
